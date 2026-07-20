@@ -10,7 +10,7 @@ columns built from 103 catalog metrics (order-book depth and depth walls, order-
 resting-liquidity add/withdraw, price-level lifetime, trade timing, outsized-trade counts, plus
 market-cap and attention enrichment) across 9 spot exchanges and ~13,800 pairs. The skill knows
 that vocabulary and the discover → pick → call → interpret playbook, and it frames every returned
-column as a **measurement**, not a signal or a trade call.
+column as a **measurement** with a definition, never as a trade call.
 
 ## Contents
 
