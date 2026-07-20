@@ -4,6 +4,23 @@ This skill is a thin orchestration layer. It does not talk to the API directly �
 two clients that the user installs once. Read this when the user has neither the MCP tools nor the
 `blackforge` CLI available, or asks how to get set up.
 
+## Install the skill
+
+The skill is distributed from GitHub and installed with the
+[`skills`](https://github.com/vercel-labs/skills) CLI (GitHub is the registry):
+
+```bash
+npx skills add blackforge-so/skill        # into the current project's skills dir
+npx skills add blackforge-so/skill -g     # or globally (user-level)
+```
+
+`skills` auto-detects the agent and installs into whichever skills directory it uses — `.claude/skills/`
+or `.agents/skills/`. It works with any skills-compatible agent (Claude Code, Cursor, and others).
+`npx skills list` shows what is installed. This is only the skill itself; you still need a data client
+(MCP or CLI) and an API key, below.
+
+## Get an API key
+
 Every keyed call needs a **BlackForge API key**. Get one at **app.blackforge.so → Keys** (create a
 key, copy the `bf_…` string). The key's plan decides which venues, columns and granularities are
 returned; anything above the plan comes back empty with an `X-BlackForge-Columns-Omitted` note
@@ -16,9 +33,11 @@ The public API base is `https://api.blackforge.so/v1`.
 ## Option A — MCP server (preferred)
 
 The MCP server exposes the five `blackforge_*` tools this skill calls directly. Once configured,
-the tools appear automatically and no shelling out is needed.
+the tools appear automatically and no shelling out is needed. Add a `blackforge` server that runs
+`npx -y @blackforge/mcp` with `BLACKFORGE_API_KEY` in its environment. The config lives wherever
+your agent keeps MCP servers — for example:
 
-**Claude Desktop** — add to `claude_desktop_config.json` (Settings → Developer → Edit Config):
+**JSON config** (e.g. an MCP-enabled desktop app or a project `.mcp.json`):
 
 ```json
 {
@@ -32,13 +51,13 @@ the tools appear automatically and no shelling out is needed.
 }
 ```
 
-**Claude Code** — either add the same block to the project/user MCP config, or run:
+**Via a CLI helper** (e.g. an agent that exposes an `mcp add` command):
 
 ```bash
-claude mcp add blackforge --env BLACKFORGE_API_KEY=bf_your_key_here -- npx -y @blackforge/mcp
+<your-agent> mcp add blackforge --env BLACKFORGE_API_KEY=bf_your_key_here -- npx -y @blackforge/mcp
 ```
 
-Restart the client. The tools become available as:
+Restart the agent. The tools become available as:
 
 | tool | purpose | key params |
 |---|---|---|
