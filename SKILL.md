@@ -1,17 +1,17 @@
 ---
 name: blackforge
 description: >-
-  Query BlackForge crypto market-data — real-time and historical order-book and trade
-  microstructure measurements (resting depth and depth walls, order-ladder rungs, liquidity
-  added and withdrawn, price-level lifetime, trade timing, outsized-trade counts, plus market-cap
-  and attention enrichment) across 9 spot exchanges (binance, bitget, bybit, coinbase, gate,
-  kraken, kucoin, mexc, okx) and ~13,800 pairs, one wide row per pair per 5-minute window (up to
-  117 columns). Use whenever the user asks about crypto market data on a venue — a coin's latest
-  stats on an exchange, order-book depth or resting liquidity for a pair, how a book or trade
-  metric moved over a time range, which pairs a venue lists, or wants to pull, chart or compare
-  BlackForge series. Drives the BlackForge MCP tools (blackforge_catalog / blackforge_symbols /
-  blackforge_latest / blackforge_series / blackforge_usage) or the `blackforge` CLI; never
-  reimplements the API. Treat every returned column as a defined measurement, never a trading call.
+  Answer crypto market-data questions with BlackForge. Use this skill whenever the user asks about
+  order-book or trade data for a coin on a spot venue — its latest stats on an exchange,
+  order-book depth or resting/pulled liquidity for a pair, taker buy-vs-sell volume, order-ladder
+  rungs, price-level lifetime, trade timing, outsized trades, or market-cap/attention enrichment;
+  when they want to pull, chart or compare a metric over a time range; or when they ask which pairs
+  a venue lists. Covers 9 spot exchanges (binance, bitget, bybit, coinbase, gate, kraken, kucoin,
+  mexc, okx) and ~13,800 pairs — up to 117 columns (103 catalog metrics) per pair per closed
+  5-minute window. Trigger even when BlackForge is not named but the question is
+  about crypto market data on a venue. Drives the BlackForge MCP tools (blackforge_catalog /
+  blackforge_symbols / blackforge_latest / blackforge_series / blackforge_usage) or the `blackforge`
+  CLI; never reimplements the API. Every returned column is a measurement, not a trade call.
 ---
 
 # BlackForge market-data
