@@ -1,0 +1,152 @@
+---
+name: blackforge
+description: >-
+  Query BlackForge crypto market-data — real-time and historical order-book and trade
+  microstructure measurements (resting depth and depth walls, order-ladder rungs, liquidity
+  added and withdrawn, price-level lifetime, trade timing, outsized-trade counts, plus market-cap
+  and attention enrichment) across 9 spot exchanges (binance, bitget, bybit, coinbase, gate,
+  kraken, kucoin, mexc, okx) and ~13,800 pairs, one wide row per pair per 5-minute window (up to
+  117 columns). Use whenever the user asks about crypto market data on a venue — a coin's latest
+  stats on an exchange, order-book depth or resting liquidity for a pair, how a book or trade
+  metric moved over a time range, which pairs a venue lists, or wants to pull, chart or compare
+  BlackForge series. Drives the BlackForge MCP tools (blackforge_catalog / blackforge_symbols /
+  blackforge_latest / blackforge_series / blackforge_usage) or the `blackforge` CLI; never
+  reimplements the API. Treat every returned column as a defined measurement, never a trading call.
+---
+
+# BlackForge market-data
+
+BlackForge is a **raw market-data** product: for every `(exchange, symbol)` it stores one wide row
+per closed **5-minute window**, up to **117 columns** built from **103 catalog metrics** —
+order-book depth, resting-liquidity dynamics, trade-flow and trade-timing measurements, plus
+market-cap and attention enrichment. This skill lets you answer a plain-language market-data
+question by calling BlackForge's own tools and reading the rows back **as measurements**.
+
+You are a thin orchestration + interpretation layer. **Never** build HTTP requests, curl the API,
+or hardcode an endpoint URL. Always go through the MCP tools or the `blackforge` CLI. Your job is to
+know the vocabulary (which metric answers which question), run the right call, and explain the
+numbers correctly.
+
+## What BlackForge is — and is not
+
+It is a measurement feed. Each column has a precise definition (e.g. *"resting sell liquidity from
+the best ask up to +100%"*, *"buy-side liquidity withdrawn beyond what trades explain"*, *"median
+lifetime of a price level created and removed inside the window"*). Present results in exactly that
+register: **a measurement with a definition and a unit**.
+
+It is **not** a signals or prediction product. Do not describe any column, or the data as a whole,
+using the words **signal, pump, anomaly, probability-scored, alpha, prediction, detection, flag, or
+alert**, and do not imply the data tells the user what will happen or what to trade. Say what was
+*measured* ("bid depth within 5% fell from X to Y"), not what it *means for a trade*. This framing
+is the whole point of the skill — hold it even if the user's own question is phrased in signal
+language; answer with the measurement.
+
+Also: never propose narrowing the venue or coin universe to save cost — the full universe is the
+product.
+
+## The playbook: discover → pick → call → interpret
+
+### 1. Discover first — never guess identifiers
+
+Before any keyed query, call **`blackforge_catalog`** (CLI: `blackforge catalog`). It is keyless and
+returns the 9 venues (each with its `minPlan`) and all 103 metrics with `key`, `label`, `unit`,
+`family`, `description`, `howToRead` and `minPlan`. Use it to resolve:
+
+- the exact **`exchange`** identifier (lowercase: `binance`, `okx`, …), and
+- the exact **`metric`** key the user's words map to (e.g. "spread"/"resting depth"/"sell wall" →
+  the right `downDepth*` / `upDepth*` / `bidLiqRemoved` … key).
+
+Never invent a metric key or a venue name. If you already hold a recent catalog in the conversation
+you may reuse it, but when unsure, re-fetch — it is cheap and keyless. For a compact index of every
+metric grouped by family with its one-line measurement definition, read
+[`references/metrics-glossary.md`](references/metrics-glossary.md); the live catalog wording is
+canonical when they differ.
+
+To list the pairs a venue trades, call **`blackforge_symbols({exchange})`**
+(CLI: `blackforge symbols --exchange <v>`). Symbol format is the venue's own
+(`BTCUSDT` on binance, `BTC-USDT` on okx/coinbase) — confirm via symbols rather than assuming.
+
+### 2. Pick the right tool for the shape of the question
+
+| The user wants… | Call | Notes |
+|---|---|---|
+| a coin's **latest** stats on a venue (one snapshot) | `blackforge_latest({exchange, symbol, columns?})` | returns `{ ts, values }` for the last closed 5-min bucket. Pass `columns` (metric keys) to keep the answer focused; omit for the full row. |
+| how a metric **moved over a time range** | `blackforge_series({exchange, symbol, metric, from, to, interval})` | returns `{ points: [{ ts, value }] }`, `ts` in epoch ms. One metric per call. |
+| **which pairs** a venue lists | `blackforge_symbols({exchange})` | |
+| **usage / quota** left | `blackforge_usage()` | recent daily usage + rows remaining this month. |
+
+CLI fallback maps 1:1: `blackforge latest …`, `blackforge series …`, `blackforge symbols …`,
+`blackforge usage`. Prefer `--output json` when you will parse the result.
+
+**Choosing `interval` for a series** (guard the 50k-point cap — points ≈ span ÷ interval):
+
+- hours to a few days → `5m` (native resolution)
+- about a week to a month → `1h`
+- multiple months → `1d`
+
+`from`/`to` are ISO-8601 UTC. If the user says "last week", compute the range from today and state
+the window you used. If a single call would exceed ~50k points, widen the interval or split the range.
+
+### 3. Interpret the rows as measurements
+
+When you present numbers, define each column with its catalog `description` / `howToRead` wording
+(or the glossary). Convert quote-relative values to USD when helpful by multiplying by
+`quoteUsdRate` (units are documented per metric). Anchor `ts` on the timeline. Compare windows in
+plain measurement terms — "taker-buy volume was 2.3× taker-sell volume", "median resting-level
+lifetime dropped from 4.1s to 0.6s" — and stop there. Do not translate a measurement into a buy/sell
+call or label it with any banned word.
+
+Watch the quality columns when relevant: `bookSynced=false`, a young `bookAgeTime`, a shallow
+`seedDepth`, or `missingTrades=true` mean the depth/trade figures for that window are unreliable —
+say so rather than over-reading them.
+
+### 4. Handle entitlements gracefully — omitted ≠ nonexistent
+
+Entitlements (venues, columns, granularity, history depth) are enforced **server-side by plan**.
+Two things to recognise and explain:
+
+- A response header **`X-BlackForge-Columns-Omitted`** (or simply missing expected columns) means
+  those columns sit **above the caller's plan** and were dropped — the data exists, the key just
+  doesn't include it. Tell the user which tier includes them and point to **blackforge.so/pricing**.
+  Never report it as "there is no data for that".
+- A **`403`** on a venue or interval means the same at the request level (e.g. a `pro`-only venue on
+  a free key, or `1m` granularity the plan lacks). Explain the plan gap and the upgrade path.
+
+`blackforge_usage` / `X-BlackForge-Rows-Remaining` tell you the monthly quota left; if a call fails
+for quota, say so plainly.
+
+### 5. Prefer MCP, fall back to CLI, else help them set up
+
+1. If the **`blackforge_*` MCP tools** are available, use them — this is the primary path.
+2. Otherwise, if the **`blackforge` CLI** is installed (or `npx -y @blackforge/cli` is usable), shell
+   out to it and parse `--output json`.
+3. If neither exists, don't hand-roll API calls — tell the user how to set one up and point them to
+   [`references/setup.md`](references/setup.md) (MCP config block, CLI install, and where to get a
+   key at app.blackforge.so → Keys).
+
+## Worked examples
+
+**"What's the resting depth for ETH on Binance right now?"**
+→ `blackforge_catalog` to confirm `binance` and the depth metric keys → `blackforge_symbols` if
+unsure of the symbol (`ETHUSDT`) → `blackforge_latest({exchange:'binance', symbol:'ETHUSDT',
+columns:['price','downDepth5','downDepth10','upDepth30','upDepth100']})`. Report each as its
+measurement: "bid depth within −5% of top-of-book: \$X; ask depth to +30%: \$Y", noting they are
+resting-liquidity sums in the quote currency at the last closed 5-min window.
+
+**"Chart the 5-minute spread proxy for BTC-USDT on OKX last week."**
+→ catalog → pick the metric → `blackforge_series({exchange:'okx', symbol:'BTC-USDT',
+metric:'<key>', interval:'5m', from:'<7d ago>', to:'<now>'})`. State the window used; if 5m over 7
+days risks the point cap, switch to `1h`. Describe the line as the measured quantity over time, not
+as a trade cue.
+
+**"Compare taker buy vs sell volume for SOL on Binance today."**
+→ two `blackforge_series` calls (`buyTradeVol`, `sellTradeVol`) or one `blackforge_latest` with both
+columns → present the ratio as measured aggressor balance.
+
+## References
+
+- [`references/metrics-glossary.md`](references/metrics-glossary.md) — all 103 metrics grouped by
+  family, each with its one-line measurement definition and `min plan`. Read it to map the user's
+  words to the right `metric` key and to explain a column.
+- [`references/setup.md`](references/setup.md) — how to configure the MCP server or install the CLI,
+  and where to get an API key.
