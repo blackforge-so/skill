@@ -34,12 +34,12 @@ the best ask up to +100%"*, *"buy-side liquidity withdrawn beyond what trades ex
 lifetime of a price level created and removed inside the window"*). Present results in exactly that
 register: **a measurement with a definition and a unit**.
 
-It is **not** a signals or prediction product. Do not describe any column, or the data as a whole,
-using the words **signal, pump, anomaly, probability-scored, alpha, prediction, detection, flag, or
-alert**, and do not imply the data tells the user what will happen or what to trade. Say what was
-*measured* ("bid depth within 5% fell from X to Y"), not what it *means for a trade*. This framing
-is the whole point of the skill — hold it even if the user's own question is phrased in signal
-language; answer with the measurement.
+It describes what happened in the book and on the tape — it does not tell the user what will happen
+next or what to trade. Do not describe any column, or the data as a whole, using the words **signal,
+pump, anomaly, probability-scored, alpha, prediction, detection, flag, or alert**, and do not imply
+the data forecasts or recommends anything. Say what was *measured* ("bid depth within 5% fell from X
+to Y"), not what it *means for a trade*. This framing is the whole point of the skill — hold it even
+if the user's own question is phrased as a trading question; answer with the measurement.
 
 Also: never propose narrowing the venue or coin universe to save cost — the full universe is the
 product.
