@@ -34,7 +34,7 @@ The public API base is `https://api.blackforge.so/v1`.
 
 The MCP server exposes the five `blackforge_*` tools this skill calls directly. Once configured,
 the tools appear automatically and no shelling out is needed. Add a `blackforge` server that runs
-`npx -y @blackforge/mcp` with `BLACKFORGE_API_KEY` in its environment. The config lives wherever
+`npx -y @blackforge-so/mcp` with `BLACKFORGE_API_KEY` in its environment. The config lives wherever
 your agent keeps MCP servers — for example:
 
 **JSON config** (e.g. an MCP-enabled desktop app or a project `.mcp.json`):
@@ -44,7 +44,7 @@ your agent keeps MCP servers — for example:
   "mcpServers": {
     "blackforge": {
       "command": "npx",
-      "args": ["-y", "@blackforge/mcp"],
+      "args": ["-y", "@blackforge-so/mcp"],
       "env": { "BLACKFORGE_API_KEY": "bf_your_key_here" }
     }
   }
@@ -54,7 +54,7 @@ your agent keeps MCP servers — for example:
 **Via a CLI helper** (e.g. an agent that exposes an `mcp add` command):
 
 ```bash
-<your-agent> mcp add blackforge --env BLACKFORGE_API_KEY=bf_your_key_here -- npx -y @blackforge/mcp
+<your-agent> mcp add blackforge --env BLACKFORGE_API_KEY=bf_your_key_here -- npx -y @blackforge-so/mcp
 ```
 
 Restart the agent. The tools become available as:
@@ -78,13 +78,13 @@ Use this when the MCP tools are not configured but a shell is available. No inst
 required — `npx` fetches it on demand:
 
 ```bash
-npx -y @blackforge/cli catalog
+npx -y @blackforge-so/cli catalog
 ```
 
 Or install once for the bare `blackforge` binary:
 
 ```bash
-npm install -g @blackforge/cli
+npm install -g @blackforge-so/cli
 blackforge auth set-key bf_your_key_here   # stored at ~/.blackforge/config.json (mode 0600)
 ```
 
