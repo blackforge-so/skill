@@ -118,7 +118,7 @@ for quota, say so plainly.
 ### 5. Prefer MCP, fall back to CLI, else help them set up
 
 1. If the **`blackforge_*` MCP tools** are available, use them — this is the primary path.
-2. Otherwise, if the **`blackforge` CLI** is installed (or `npx -y @blackforge/cli` is usable), shell
+2. Otherwise, if the **`blackforge` CLI** is installed (or `npx -y @blackforge-so/cli` is usable), shell
    out to it and parse `--output json`.
 3. If neither exists, don't hand-roll API calls — tell the user how to set one up and point them to
    [`references/setup.md`](references/setup.md) (MCP config block, CLI install, and where to get a

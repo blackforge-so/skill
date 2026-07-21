@@ -24,7 +24,7 @@ columns="${3:-}"
 if command -v blackforge >/dev/null 2>&1; then
   bf=(blackforge)
 else
-  bf=(npx -y @blackforge/cli)
+  bf=(npx -y @blackforge-so/cli)
 fi
 
 args=(latest --exchange "$exchange" --symbol "$symbol" --output json)
