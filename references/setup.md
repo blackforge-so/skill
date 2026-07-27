@@ -61,7 +61,7 @@ Restart the agent. The tools become available as:
 
 | tool | purpose | key params |
 |---|---|---|
-| `blackforge_catalog` | venues + 103 metric definitions | *(keyless — call first)* |
+| `blackforge_catalog` | venues + 119 metric definitions | *(keyless — call first)* |
 | `blackforge_symbols` | pairs a venue trades | `exchange` |
 | `blackforge_latest` | latest closed 5-min bucket | `exchange`, `symbol`, `columns?` |
 | `blackforge_series` | a metric over a time range | `exchange`, `symbol`, `metric`, `from`, `to`, `interval` |
