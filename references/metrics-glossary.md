@@ -1,10 +1,12 @@
 # BlackForge metrics glossary
 
 Every column BlackForge returns is a **measurement of the order book or trade tape** over one
-closed 5-minute window for one `(exchange, symbol)`. There are **103 catalog metrics**; a single
-returned row can carry **up to 117 columns** once keys, quote/USD conversion fields and quality
-markers are included. Describe each column to the user using the measurement wording below — never
-as a score, a call, or an event to act on.
+closed 5-minute window for one `(exchange, symbol)`. There are **119 catalog metrics**, and a full
+row on the top tier carries all 119 — keys, quote/USD conversion fields and quality markers
+included. (The ClickHouse table has 121 physical columns; `bookAgeTime` and `seedDepth` are
+`internal: true`, measure our own collector rather than the market, and are never sold.) Describe
+each column to the user using the measurement wording below — never as a score, a call, or an event
+to act on.
 
 **How to use this file.** Pick the `metric key` that matches what the user asked for and pass it
 verbatim to `blackforge_series` (or `blackforge_latest`'s `columns`). Always reconcile against the
@@ -16,18 +18,36 @@ below it the column comes back empty with an `X-BlackForge-Columns-Omitted` note
 base coin; `price` = quote per base; `ms` = milliseconds; `count`/`index`/`ratio`/`bool`/`usd` as
 named. Columns marked quote-relative are raw in the quote currency.
 
-**Families at a glance.** candle (price OHLC) · tradeFlow (taker buy/sell aggression) · bookWalls
-(cumulative resting depth within a % band of top-of-book) · orderLadders (resting depth in fixed
-3%-wide slices) · bookMicro (liquidity added, liquidity withdrawn beyond trade-explained volume,
-level flicker, level lifetime) · tradeTiming (silences, repeating intervals, same-size / same-instant
-groupings) · strong (counts and value of outsized trades at size multiples) · enrichment
-(market-cap, rank, market-wide liquidity/volume) · context (BTC/ETH reference price, sentiment
-index, search interest) · quality (sync state, book age, unit conversion).
+**Families at a glance.** keys (4) · candle (4, price OHLC) · tradeFlow (10, taker buy/sell
+aggression) · bookWalls (14, cumulative resting depth within a % band of top-of-book, plus how far
+the book reaches) · orderLadders (14, resting depth in fixed 3%-wide slices) · bookMicro (11,
+liquidity added and removed, level counts, level flicker, level lifetime) · tradeTiming (8,
+silences, repeating intervals, same-size / same-instant groupings) · strong (19, counts and value
+of outsized trades at size multiples) · enrichment (18, market-cap, rank, market-wide
+liquidity/volume, plus the attention and developer-activity block) · context (9, BTC/ETH reference
+prices, fear-and-greed, exchange app-store ranks, market-wide news rate) · quality (10 physical,
+**8 sold** — the two internal ones are excluded).
+
+> **The depth-band names are PERCENT, not basis points.** `upDepth30` is +30%, `upDepth400` is
+> +400%, `downDepth5` is −5%. An earlier audit read them as bps and built a wrong conclusion on it.
+> Asks use wide bands (+30…+400%) because alt asks are sparse; bids use tight ones (−5…−20%)
+> because support sits near price.
 
 > **bookWalls vs orderLadders.** A *wall* is cumulative depth from top-of-book out to a band edge
 > (e.g. `upDepth100` = all resting asks up to +100%). A *ladder* rung is the depth inside one
 > discrete 3% slice (e.g. `buyOrderVol6` = bids 3–6% below top). Walls measure total thickness;
 > ladder rungs measure how that depth is distributed across price.
+
+> **Read `qualityFlags` on every row.** It is free on every plan, deliberately queryable, and it is
+> what qualifies every other column. `0` means no known problem; each set bit names one condition
+> and carries a `contaminates` list. Bit 15 (32768) means the row predates the quality rail —
+> **unchecked, not unreliable**. Where a chart draws this: wherever the mark is fainter or hollow,
+> that bucket is flagged; solid means final.
+
+> **Three columns you must not request.** `bookAgeTime` and `seedDepth` are internal and
+> accepted-and-ignored. `bookSynced` is **non-queryable** — naming it in `columns=` returns a 400
+> for the whole request, the columns you actually wanted included. `qualityFlags` replaces all
+> three.
 
 ## Keys & timestamps  
 _family key: `keys` · 4 metrics_
@@ -66,7 +86,7 @@ _family key: `tradeFlow` · 10 metrics_
 | `sellTradeMax` | Largest sell trade | quote | free | Value of the single largest taker-sell trade in the window. |
 
 ## Book walls — cumulative depth bands  
-_family key: `bookWalls` · 12 metrics_
+_family key: `bookWalls` · 14 metrics · band names are PERCENT_
 
 | metric key | label | unit | min plan | measurement |
 |---|---|---|---|---|
@@ -82,6 +102,12 @@ _family key: `bookWalls` · 12 metrics_
 | `downDepth15` | Bid depth to -15% | quote | pro | Resting buy liquidity from the best bid down to 15% below it. |
 | `downDepth20` | Bid depth to -20% | quote | pro | Resting buy liquidity from the best bid down to 20% below it. |
 | `downDepthFull` | Total bid depth | quote | max | All resting buy liquidity across the entire order book. |
+| `askDepthReachPct` | Ask book reach | percent (declared `ratio`) | pro | How far above the best ask, **in percent**, the book we maintain actually reaches this window. It is the ceiling on every ask-side depth column: a band wider than this reach reports only the part of the book we hold. Deliberately "reach", not "coverage" — it states how far the book extends, it does not assert nothing is missing. Not comparable to the bid figure: the ask span is unbounded, so it is routinely enormous. |
+| `bidDepthReachPct` | Bid book reach | percent (declared `ratio`) | pro | How far below the best bid, **in percent**, the book we maintain actually reaches. Hard-bounded at 100% by the price floor and usually at or near it; well under 100 means the bid ladder ran out before the band you asked for. Not comparable to the ask figure. |
+
+> ⚠️ **Known catalog bug — unit.** Both reach columns are PERCENT but the catalog declares
+> `unit: 'ratio'`. Read them as percent (0–100+, not 0–1). Do not "fix" a value by multiplying by
+> 100.
 
 ## Order ladders — fixed 3% slices  
 _family key: `orderLadders` · 14 metrics_
@@ -110,13 +136,19 @@ _family key: `bookMicro` · 11 metrics_
 |---|---|---|---|---|
 | `bestBid` | Best bid | price | free | The highest bid price at the moment the window closed. |
 | `bestAsk` | Best ask | price | free | The lowest ask price at the moment the window closed. |
-| `bookUpdateCount` | Book update count | count | pro | Number of order-book change events during the window. |
+| `bookLevelChangeCount` | Book level change count | count | pro | Price-level changes recorded in the window: one per level whose size actually moved, additions and removals alike, both sides. A level re-broadcast at its existing size is not counted. Counting changes rather than messages makes it largely independent of how a venue batches its pushes, but a level born and removed between two pushes never arrives — read it as a **lower bound** on churn. The damping is partial: a residual of roughly 4.5× remains across venues. (This **replaces** `bookUpdateCount`, which counted applied WebSocket frames — a different measurement, not a rename.) |
 | `bidLevelCount` | Bid level count | count | pro | Number of price levels on the bid side at window close. |
 | `askLevelCount` | Ask level count | count | pro | Number of price levels on the ask side at window close. |
 | `bidLiqAdded` | Bid liquidity added | quote | max | Buy-side resting liquidity placed into the book during the window, in quote units. |
-| `bidLiqRemoved` | Bid liquidity removed | quote | max | Buy-side resting liquidity withdrawn from the book during the window — the portion of size decrease not explained by executed trades (i.e. cancellations), in quote units. |
+| `bidLiqRemoved` | Bid liquidity removed | quote | max | **Gross** quote notional that left the bid side of the book during the window. A small trade-explained correction is subtracted, but it is immaterial: deleting the subtraction entirely moves the number by **at most 0.83%** (measured across all nine venues; mexc 0.001%, kraken 0.009%, binance 0.82%). Read it as "quote notional that left the book", not as "the portion trades cannot explain". |
 | `askLiqAdded` | Ask liquidity added | quote | max | Sell-side resting liquidity placed into the book during the window, in quote units. |
-| `askLiqRemoved` | Ask liquidity removed | quote | max | Sell-side resting liquidity withdrawn from the book during the window — the portion of size decrease not explained by executed trades (i.e. cancellations), in quote units. |
+| `askLiqRemoved` | Ask liquidity removed | quote | max | **Gross** quote notional that left the ask side of the book during the window, with the same ≤0.83% trade-explained correction as `bidLiqRemoved`. Not "the portion trades cannot explain". |
+
+> **The liquidity family is not comparable across venues.** `maintainedDepth` differs 12.5× between
+> venues (bybit 200 … binance/coinbase/gate/mexc/kucoin 5,000), so these are per-window flows
+> accumulated against books of very different size. Normalise per row before comparing venues —
+> `liqAdded / bookLevelChangeCount` is the closed-form figure, and dividing by a book-size column on
+> the same row (`upDepth30 + downDepth5`) also collapses most of the spread.
 | `levelFlickerCount` | Level flicker count | count | max | Count of price levels that appeared, vanished, then reappeared within the window (a placed-removed-placed cycle). |
 | `levelLifetimeMedianTime` | Median level lifetime | ms | max | Median lifetime, in ms, of price levels that were both created and removed inside the window. |
 
@@ -159,8 +191,8 @@ _family key: `strong` · 19 metrics_
 | `ssVol200` | Strong sell volume 3x | quote | max | Total value of taker-sell trades at least 3 times the average size. |
 | `ssVol500` | Strong sell volume 6x | quote | max | Total value of taker-sell trades at least 6 times the average size. |
 
-## Enrichment (market-cap / attention)  
-_family key: `enrichment` · 9 metrics_
+## Enrichment (market-cap / attention / developer activity)  
+_family key: `enrichment` · 18 metrics_
 
 | metric key | label | unit | min plan | measurement |
 |---|---|---|---|---|
@@ -173,9 +205,20 @@ _family key: `enrichment` · 9 metrics_
 | `cmcRank` | CoinMarketCap rank | index | pro | The coin market-cap rank on CoinMarketCap. |
 | `cmcLiquidity` | CoinMarketCap liquidity | usd | pro | The effective liquidity for the pair from CoinMarketCap. |
 | `cmcVolume` | CoinMarketCap volume | usd | pro | The 24-hour trading volume for the pair from CoinMarketCap. |
+| `cgTrendingRank` | CoinGecko trending rank | index | max | The coin's position in CoinGecko's current trending list. |
+| `watchlistUsers` | Watchlist users | count | max | How many CoinGecko users hold the coin in a watchlist portfolio. |
+| `sentimentUpPct` | Community up-vote share | ratio | max | The share of CoinGecko community up/down votes that are 'up', as a percentage. |
+| `githubCommits4w` | GitHub commits (4 weeks) | count | max | Commits to the project's linked GitHub repositories in the last four weeks. |
+| `githubStars` | GitHub stars | count | max | Stars on the project's linked GitHub repositories. |
+| `githubContributors` | GitHub contributors | count | max | Distinct pull-request contributors to the project's linked GitHub repositories. |
+| `newsCount24h` | News articles (24h) | count | max | News articles about the coin in the last 24 hours. |
+| `videoCount24h` | Videos (24h) | count | max | Videos about the coin published in the last 24 hours. |
+| `aiVisibility` | AI visibility (experimental) | count | max | The size of an AI assistant's generated answer about the coin (experimental). |
 
 ## Market context  
-_family key: `context` · 5 metrics_
+_family key: `context` · 9 metrics_
+
+These describe the market, not the pair — the same value is stamped on every row in the window.
 
 | metric key | label | unit | min plan | measurement |
 |---|---|---|---|---|
@@ -183,17 +226,38 @@ _family key: `context` · 5 metrics_
 | `ethPriceUsd` | Ethereum price | price | free | The reference Ethereum price in USD at the snapshot time. |
 | `fearGreed` | Fear and greed index | index | max | The market-wide crypto fear and greed reading. |
 | `fearGreedCmc` | Fear and greed index (CMC) | index | max | The CoinMarketCap version of the fear and greed reading. |
-| `searchInterest` | Search interest | index | max | Relative search interest in the coin. |
+| `coinbaseAppRank` | Coinbase app-store rank | index | max | Coinbase's position in the Finance chart of its app store. |
+| `coinbaseAppRankRegion` | Coinbase app-rank region | index | max | The app-store storefront region the Coinbase rank was measured in (a code such as `us`). |
+| `binanceAppRank` | Binance app-store rank | index | max | Binance's position in the Finance chart of its app store. |
+| `binanceAppRankRegion` | Binance app-rank region | index | max | The app-store storefront region the Binance rank was measured in (a code such as `tr`). |
+| `cryptoNewsPerHour` | Crypto news arrival rate | count | max | How fast crypto news articles are being published market-wide, in articles per hour. |
+
+> `searchInterest` was **retired in migration 005** — it was never populated. It does not exist; do
+> not request it.
 
 ## Quality & units (data-integrity fields)  
-_family key: `quality` · 7 metrics_
+_family key: `quality` · 10 physical columns, **8 sold**_
 
 | metric key | label | unit | min plan | measurement |
 |---|---|---|---|---|
+| `qualityFlags` | Row quality flags | count (bitmask) | free | A bitmask of everything known to be wrong with this row. `0` = no known problem; each set bit is one named condition, and the catalog entry ships the full bit table as `bits`, each with the metric families it `contaminates`. Nothing is hidden, filtered or nulled — every value is exactly as measured, and this is how you know which to trust. **Bit 15 (32768) means the row was never assessed — unchecked, not unreliable.** It is the ClickHouse column default, so the whole pre-migration-006 archive carries it. |
+| `lastTradeAgeTime` | Last trade age | **seconds** (catalog declares `ms` — see below) | free | How long before the window closed the pair last traded. `0` when the window itself contained a trade. About half of all windows contain no trade; their candle carries the last traded price forward rather than inventing one, so a large value means the price is real but old. |
+| `bookObservedAt` | Book observation time | ms | free | The instant the order book was actually read for this row — later than the window close, by a different amount on each venue. This, not `ts`, is when the depth and best bid/ask were true. Use it to line two venues up. |
 | `quoteAsset` | Quote asset | index | free | The currency the pair is quoted in. |
 | `quoteUsdRate` | Quote to USD rate | ratio | free | The rate to convert the quote asset into USD. |
 | `enrichmentTs` | Enrichment time | ms | free | The time the enrichment data was captured. |
-| `bookSynced` | Book synced | bool | free | Whether the order book was in sync when the snapshot was taken. |
-| `bookAgeTime` | Book age | ms | free | How long the order book had been running at snapshot time. |
-| `seedDepth` | Seed depth | count | free | The number of levels the order book was seeded with. |
-| `missingTrades` | Missing trades | bool | free | Whether some trades may have been missed in the window. |
+| `bookSynced` | Book synced | bool | free | **Non-queryable — do not name it in `columns=`; it 400s the whole request.** Use `qualityFlags`. |
+| `missingTrades` | Missing trades | bool | free | Whether some trades may have been missed in the window. Non-queryable as an explicit column; use `qualityFlags`. |
+
+> ⚠️ **Known catalog bug — unit.** The collector writes `lastTradeAgeTime` in **seconds**; the API
+> catalog declares `unit: 'ms'`. The collector is the truth. Do not divide by 1000.
+
+**Not sold — `internal: true`, catalogued but never served:**
+
+| metric key | why |
+|---|---|
+| `bookAgeTime` | Time since the book was last **re-seeded**, and **larger is healthier** — it is preserved across a warm handover, so a big value means a long uninterrupted run. Any reading of it as a staleness or freshness-of-data signal is backwards. It measures our collector, not the market. |
+| `seedDepth` | The number of levels the book was seeded with — again a property of our collector. |
+
+Both are accepted-and-ignored if you name them, so a request does not fail, but no value comes
+back. Use `qualityFlags` for anything you would have asked them.
