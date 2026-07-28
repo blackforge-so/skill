@@ -21,12 +21,21 @@ or `.agents/skills/`. It works with any skills-compatible agent (Claude Code, Cu
 
 ## Get an API key
 
-Every keyed call needs a **BlackForge API key**. Get one at **app.blackforge.so → Keys** (create a
+Every keyed call needs a **BlackForge API key**. Get one at **app.blackforge.so → API** (create a
 key, copy the `bf_…` string). The key's plan decides which venues, columns and granularities are
-returned; anything above the plan comes back empty with an `X-BlackForge-Columns-Omitted` note
-rather than an error. See the pricing tiers at blackforge.so/pricing.
+returned, and the three gates behave **differently**:
 
-The public API base is `https://api.blackforge.so/v1`.
+- **Columns** degrade silently — unentitled ones are dropped and an `X-BlackForge-Columns-Omitted`
+  header names them. Not an error.
+- **Venues and intervals** are a hard **403** before any data is read (e.g. `5m` on a pro key,
+  whose floor is `1h`).
+- **History depth** is clamped **silently and unheadered** — a `from` earlier than the plan's
+  window is moved forward and you simply get fewer points, with nothing saying so.
+
+See the pricing tiers at blackforge.so/pricing.
+
+The public API base is `https://api.blackforge.so/v1`. **Note the split:** `/v1` is part of the
+route, not of the configured origin — see `BLACKFORGE_BASE_URL` below.
 
 ---
 
@@ -61,14 +70,16 @@ Restart the agent. The tools become available as:
 
 | tool | purpose | key params |
 |---|---|---|
-| `blackforge_catalog` | venues + 119 metric definitions | *(keyless — call first)* |
+| `blackforge_catalog` | venues + 120 metric definitions | *(keyless — call first)* |
 | `blackforge_symbols` | pairs a venue trades | `exchange` |
 | `blackforge_latest` | latest closed 5-min bucket | `exchange`, `symbol`, `columns?` |
 | `blackforge_series` | a metric over a time range | `exchange`, `symbol`, `metric`, `from`, `to`, `interval` |
 | `blackforge_usage` | recent usage + rows remaining | *(none)* |
 
-Optional env `BLACKFORGE_BASE_URL` overrides the API base for a local/dev server
-(e.g. `http://localhost:3001/api`).
+Optional env `BLACKFORGE_BASE_URL` overrides the **origin** for a local/dev server
+(e.g. `http://localhost:3001/api`). It is the origin, **not** the `/v1` base above: both clients
+append `/v1/...` themselves, so setting it to `https://api.blackforge.so/v1` makes every request
+hit `/v1/v1/...` and 404. The default is `https://api.blackforge.so`.
 
 ---
 
