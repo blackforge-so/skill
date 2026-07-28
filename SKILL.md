@@ -39,8 +39,14 @@ It describes what happened in the book and on the tape — it does not tell the 
 next or what to trade. Do not describe any column, or the data as a whole, using the words **signal,
 pump, anomaly, probability-scored, alpha, prediction, detection, or alert**, and do not imply
 the data forecasts or recommends anything. Say what was *measured* ("bid depth within 5% fell from X
-to Y"), not what it *means for a trade*. This framing is the whole point of the skill — hold it even
-if the user's own question is phrased as a trading question; answer with the measurement.
+to Y"), not what it *means for a trade*. This framing is the whole point of the skill.
+
+**Where the line falls.** If the question contains a real market-data question wearing trading
+clothes — "is there a big sell wall on DOGE, should I be worried?" — hold the framing and answer
+with the measurement. But a request for a **recommendation with no data question inside it**
+("should I buy ETH right now?") is **not** a BlackForge question: do not trigger on it, and do not
+reach for market data to dress up an answer. Say plainly that you do not give trade advice, and
+offer to show what the book and the tape actually measured if that would help.
 
 ("Flag" is the one exception, and only in its literal sense: `qualityFlags` is a real column and a
 flagged *bucket* is a statement about data quality, never about the market.)
