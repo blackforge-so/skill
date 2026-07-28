@@ -1,9 +1,9 @@
 # BlackForge metrics glossary
 
 Every column BlackForge returns is a **measurement of the order book or trade tape** over one
-closed 5-minute window for one `(exchange, symbol)`. There are **119 catalog metrics**, and a full
-row on the top tier carries all 119 — keys, quote/USD conversion fields and quality markers
-included. (The ClickHouse table has 121 physical columns; `bookAgeTime` and `seedDepth` are
+closed 5-minute window for one `(exchange, symbol)`. There are **120 catalog metrics**, and a full
+row on the top tier carries all 120 — keys, quote/USD conversion fields and quality markers
+included. (The ClickHouse table has 122 physical columns; `bookAgeTime` and `seedDepth` are
 `internal: true`, measure our own collector rather than the market, and are never sold.) Describe
 each column to the user using the measurement wording below — never as a score, a call, or an event
 to act on.
@@ -15,18 +15,20 @@ fast index. `min plan` tells you the lowest tier that includes the column: if th
 below it the column comes back empty with an `X-BlackForge-Columns-Omitted` note (see SKILL.md).
 
 **Units.** `quote` = the pair's quote currency (multiply by `quoteUsdRate` for USD); `base` = the
-base coin; `price` = quote per base; `ms` = milliseconds; `count`/`index`/`ratio`/`bool`/`usd` as
-named. Columns marked quote-relative are raw in the quote currency.
+base coin; `price` = quote per base; `ms` = milliseconds; `seconds` = seconds (not ms — check the
+unit before converting); `percent` = percent, already ×100, not a 0–1 ratio;
+`count`/`index`/`ratio`/`bool`/`usd` as named. Those eleven are the whole set the API returns.
+Columns marked quote-relative are raw in the quote currency.
 
 **Families at a glance.** keys (4) · candle (4, price OHLC) · tradeFlow (10, taker buy/sell
 aggression) · bookWalls (14, cumulative resting depth within a % band of top-of-book, plus how far
 the book reaches) · orderLadders (14, resting depth in fixed 3%-wide slices) · bookMicro (11,
 liquidity added and removed, level counts, level flicker, level lifetime) · tradeTiming (8,
 silences, repeating intervals, same-size / same-instant groupings) · strong (19, counts and value
-of outsized trades at size multiples) · enrichment (18, market-cap, rank, market-wide
-liquidity/volume, plus the attention and developer-activity block) · context (9, BTC/ETH reference
-prices, fear-and-greed, exchange app-store ranks, market-wide news rate) · quality (10 physical,
-**8 sold** — the two internal ones are excluded).
+of outsized trades at size multiples) · enrichment (18, market-cap, rank, per-pair
+CoinMarketCap liquidity/volume, plus the attention and developer-activity block) · context (9, BTC/ETH reference
+prices, fear-and-greed, exchange app-store ranks, market-wide news rate) · quality (11 physical,
+**9 sold** — the two internal ones are excluded).
 
 > **The depth-band names are PERCENT, not basis points.** `upDepth30` is +30%, `upDepth400` is
 > +400%, `downDepth5` is −5%. An earlier audit read them as bps and built a wrong conclusion on it.
@@ -44,10 +46,16 @@ prices, fear-and-greed, exchange app-store ranks, market-wide news rate) · qual
 > the quality rail — **unchecked, not unreliable**. Where a chart draws this: wherever the mark is fainter or hollow,
 > that bucket is flagged; solid means final.
 
-> **Three columns you must not request.** `bookAgeTime` and `seedDepth` are internal and
-> accepted-and-ignored. `bookSynced` is **non-queryable** — naming it in `columns=` returns a 400
-> for the whole request, the columns you actually wanted included. `qualityFlags` replaces all
-> three.
+> **Five columns you must not request.** `bookSynced`, `missingTrades`, `quoteAsset`, `baseAsset`
+> and `enrichmentTs` are **non-queryable**: naming any one in `columns=` returns a 400 for the whole
+> request, the columns you actually wanted included. Nothing in the catalog marks them — all five
+> are served at `minPlan: free`, and `plottable: false` is not the tell (`qualityFlags` and
+> `bookObservedAt` are also `plottable: false` and both ARE queryable). They arrive on their own in
+> a full row; just never ask for them by name. `qualityFlags` replaces the `bookSynced` and
+> `missingTrades` concerns.
+>
+> `bookAgeTime` and `seedDepth` are the opposite case: internal, and deliberately
+> **accepted-and-ignored** in `columns=` — harmless there, though they do 400 a `series` call.
 
 ## Keys & timestamps  
 _family key: `keys` · 4 metrics_
@@ -102,8 +110,8 @@ _family key: `bookWalls` · 14 metrics · band names are PERCENT_
 | `downDepth15` | Bid depth to -15% | quote | pro | Resting buy liquidity from the best bid down to 15% below it. |
 | `downDepth20` | Bid depth to -20% | quote | pro | Resting buy liquidity from the best bid down to 20% below it. |
 | `downDepthFull` | Total bid depth | quote | max | All resting buy liquidity across the entire order book. |
-| `askDepthReachPct` | Ask book reach | percent (declared `ratio`) | pro | How far above the best ask, **in percent**, the book we maintain actually reaches this window. It is the ceiling on every ask-side depth column: a band wider than this reach reports only the part of the book we hold. Deliberately "reach", not "coverage" — it states how far the book extends, it does not assert nothing is missing. Not comparable to the bid figure: the ask span is unbounded, so it is routinely enormous. |
-| `bidDepthReachPct` | Bid book reach | percent (declared `ratio`) | pro | How far below the best bid, **in percent**, the book we maintain actually reaches. Hard-bounded at 100% by the price floor and usually at or near it; well under 100 means the bid ladder ran out before the band you asked for. Not comparable to the ask figure. |
+| `askDepthReachPct` | Ask book reach | percent | pro | How far above the best ask, **in percent**, the book we maintain actually reaches this window. It is the ceiling on every ask-side depth column: a band wider than this reach reports only the part of the book we hold. Deliberately "reach", not "coverage" — it states how far the book extends, it does not assert nothing is missing. Not comparable to the bid figure: the ask span is unbounded, so it is routinely enormous. |
+| `bidDepthReachPct` | Bid book reach | percent | pro | How far below the best bid, **in percent**, the book we maintain actually reaches. Hard-bounded at 100% by the price floor and usually at or near it; well under 100 means the bid ladder ran out before the band you asked for. Not comparable to the ask figure. |
 
 > ⚠️ **Known catalog bug — unit.** Both reach columns are PERCENT but the catalog declares
 > `unit: 'ratio'`. Read them as percent (0–100+, not 0–1). Do not "fix" a value by multiplying by
@@ -145,7 +153,7 @@ _family key: `bookMicro` · 11 metrics_
 | `askLiqRemoved` | Ask liquidity removed | quote | max | **Gross** decrease in sell-side resting size across the window, with trades at the same price within 500 ms netted out (measured to remove under **0.3%** of the total). Read it as gross ask-side book decrease, not as cancellations alone: the trade netting is small enough that this is essentially all level-decrease notional. |
 
 > **The liquidity family is not comparable across venues.** `maintainedDepth` differs 12.5× between
-> venues (bybit 200 … binance/coinbase/gate/mexc/kucoin 5,000), so these are per-window flows
+> venues (okx 400 · bitget 500 · bybit/kraken 1,000 · binance/coinbase/gate/mexc/kucoin 5,000), so these are per-window flows
 > accumulated against books of very different size. Normalise per row before comparing venues —
 > `liqAdded / bookLevelChangeCount` is the closed-form figure, and dividing by a book-size column on
 > the same row (`upDepth30 + downDepth5`) also collapses most of the spread.
@@ -236,18 +244,19 @@ These describe the market, not the pair — the same value is stamped on every r
 > not request it.
 
 ## Quality & units (data-integrity fields)  
-_family key: `quality` · 10 physical columns, **8 sold**_
+_family key: `quality` · 11 physical columns, **9 sold**_
 
 | metric key | label | unit | min plan | measurement |
 |---|---|---|---|---|
 | `qualityFlags` | Row quality flags | count (bitmask) | free | A bitmask of everything known to be wrong with this row; each bit is one named condition, `0` = no known problem. The catalog entry ships the full flag table as `bits`, each with the metric families it `contaminates` — so a broken order book leaves the trade columns on the same row sound. Nothing in the row is hidden, filtered or nulled — this column tells you which values to trust. Name the flag, never a bit number: `PRICE_FROM_LAST_TRADE` marks a window whose price is carried forward from an earlier trade; `QUALITY_UNKNOWN` (mask 32768) means the row predates the quality rail and was never assessed — **unchecked, not unreliable** — and is the ClickHouse column default, so the whole pre-migration-006 archive carries it. |
 | `lastTradeAgeTime` | Last trade age | seconds | free | How long before the window closed the pair last traded, in seconds; `0` when the window contained a trade. A large value means the price is real but old. Read it with the `PRICE_FROM_LAST_TRADE` quality flag. |
 | `bookObservedAt` | Book observation time | ms | free | The instant the order book was actually read for this row — later than the window close, by a different amount on each venue. This, not `ts`, is when the depth and best bid/ask were true. Use it to line two venues up. |
-| `quoteAsset` | Quote asset | index | free | The currency the pair is quoted in. |
+| `baseAsset` | Base asset | index | free | **Non-queryable — naming it in `columns=` 400s the whole request.** The base asset of the pair — the coin being priced — as the venue itself spells it (kraken, for one, writes bitcoin `XBT` and dogecoin `XDG`). Use it to group or match a coin across venues without splitting the symbol string, which every venue formats differently. Read it with `quoteAsset` to name the full instrument. |
+| `quoteAsset` | Quote asset | index | free | **Non-queryable — naming it in `columns=` 400s the whole request.** The currency the pair is quoted in. |
 | `quoteUsdRate` | Quote to USD rate | ratio | free | The rate to convert the quote asset into USD. |
-| `enrichmentTs` | Enrichment time | ms | free | The time the enrichment data was captured. |
+| `enrichmentTs` | Enrichment time | ms | free | **Non-queryable — naming it in `columns=` 400s the whole request.** The time the enrichment data was captured. |
 | `bookSynced` | Book synced | bool | free | **Non-queryable — do not name it in `columns=`; it 400s the whole request.** When false, read the depth and wall figures on that row as not final. Use `qualityFlags`. |
-| `missingTrades` | Missing trades | bool | free | Whether some trades may have been missed in the window. Non-queryable as an explicit column; use `qualityFlags`. |
+| `missingTrades` | Missing trades | bool | free | **Non-queryable — naming it in `columns=` 400s the whole request.** Whether some trades may have been missed in the window. Use `qualityFlags`. |
 
 **Not sold — `internal: true`, catalogued but never served:**
 
