@@ -40,8 +40,8 @@ prices, fear-and-greed, exchange app-store ranks, market-wide news rate) · qual
 
 > **Read `qualityFlags` on every row.** It is free on every plan, deliberately queryable, and it is
 > what qualifies every other column. `0` means no known problem; each set bit names one condition
-> and carries a `contaminates` list. Bit 15 (32768) means the row predates the quality rail —
-> **unchecked, not unreliable**. Where a chart draws this: wherever the mark is fainter or hollow,
+> and carries a `contaminates` list. The `QUALITY_UNKNOWN` flag (mask 32768) means the row predates
+> the quality rail — **unchecked, not unreliable**. Where a chart draws this: wherever the mark is fainter or hollow,
 > that bucket is flagged; solid means final.
 
 > **Three columns you must not request.** `bookAgeTime` and `seedDepth` are internal and
@@ -140,9 +140,9 @@ _family key: `bookMicro` · 11 metrics_
 | `bidLevelCount` | Bid level count | count | pro | Number of price levels on the bid side at window close. |
 | `askLevelCount` | Ask level count | count | pro | Number of price levels on the ask side at window close. |
 | `bidLiqAdded` | Bid liquidity added | quote | max | Buy-side resting liquidity placed into the book during the window, in quote units. |
-| `bidLiqRemoved` | Bid liquidity removed | quote | max | **Gross** quote notional that left the bid side of the book during the window. A small trade-explained correction is subtracted, but it is immaterial: deleting the subtraction entirely moves the number by **at most 0.83%** (measured across all nine venues; mexc 0.001%, kraken 0.009%, binance 0.82%). Read it as "quote notional that left the book", not as "the portion trades cannot explain". |
+| `bidLiqRemoved` | Bid liquidity removed | quote | max | **Gross** decrease in buy-side resting size across the window, with trades at the same price within 500 ms netted out (measured to remove under **0.3%** of the total). Read it as gross bid-side book decrease, not as cancellations alone: the trade netting is small enough that this is essentially all level-decrease notional. |
 | `askLiqAdded` | Ask liquidity added | quote | max | Sell-side resting liquidity placed into the book during the window, in quote units. |
-| `askLiqRemoved` | Ask liquidity removed | quote | max | **Gross** quote notional that left the ask side of the book during the window, with the same ≤0.83% trade-explained correction as `bidLiqRemoved`. Not "the portion trades cannot explain". |
+| `askLiqRemoved` | Ask liquidity removed | quote | max | **Gross** decrease in sell-side resting size across the window, with trades at the same price within 500 ms netted out (measured to remove under **0.3%** of the total). Read it as gross ask-side book decrease, not as cancellations alone: the trade netting is small enough that this is essentially all level-decrease notional. |
 
 > **The liquidity family is not comparable across venues.** `maintainedDepth` differs 12.5× between
 > venues (bybit 200 … binance/coinbase/gate/mexc/kucoin 5,000), so these are per-window flows
@@ -240,23 +240,20 @@ _family key: `quality` · 10 physical columns, **8 sold**_
 
 | metric key | label | unit | min plan | measurement |
 |---|---|---|---|---|
-| `qualityFlags` | Row quality flags | count (bitmask) | free | A bitmask of everything known to be wrong with this row. `0` = no known problem; each set bit is one named condition, and the catalog entry ships the full bit table as `bits`, each with the metric families it `contaminates`. Nothing is hidden, filtered or nulled — every value is exactly as measured, and this is how you know which to trust. **Bit 15 (32768) means the row was never assessed — unchecked, not unreliable.** It is the ClickHouse column default, so the whole pre-migration-006 archive carries it. |
-| `lastTradeAgeTime` | Last trade age | **seconds** (catalog declares `ms` — see below) | free | How long before the window closed the pair last traded. `0` when the window itself contained a trade. About half of all windows contain no trade; their candle carries the last traded price forward rather than inventing one, so a large value means the price is real but old. |
+| `qualityFlags` | Row quality flags | count (bitmask) | free | A bitmask of everything known to be wrong with this row; each bit is one named condition, `0` = no known problem. The catalog entry ships the full flag table as `bits`, each with the metric families it `contaminates` — so a broken order book leaves the trade columns on the same row sound. Nothing in the row is hidden, filtered or nulled — this column tells you which values to trust. Name the flag, never a bit number: `PRICE_FROM_LAST_TRADE` marks a window whose price is carried forward from an earlier trade; `QUALITY_UNKNOWN` (mask 32768) means the row predates the quality rail and was never assessed — **unchecked, not unreliable** — and is the ClickHouse column default, so the whole pre-migration-006 archive carries it. |
+| `lastTradeAgeTime` | Last trade age | seconds | free | How long before the window closed the pair last traded, in seconds; `0` when the window contained a trade. A large value means the price is real but old. Read it with the `PRICE_FROM_LAST_TRADE` quality flag. |
 | `bookObservedAt` | Book observation time | ms | free | The instant the order book was actually read for this row — later than the window close, by a different amount on each venue. This, not `ts`, is when the depth and best bid/ask were true. Use it to line two venues up. |
 | `quoteAsset` | Quote asset | index | free | The currency the pair is quoted in. |
 | `quoteUsdRate` | Quote to USD rate | ratio | free | The rate to convert the quote asset into USD. |
 | `enrichmentTs` | Enrichment time | ms | free | The time the enrichment data was captured. |
-| `bookSynced` | Book synced | bool | free | **Non-queryable — do not name it in `columns=`; it 400s the whole request.** Use `qualityFlags`. |
+| `bookSynced` | Book synced | bool | free | **Non-queryable — do not name it in `columns=`; it 400s the whole request.** When false, read the depth and wall figures on that row as not final. Use `qualityFlags`. |
 | `missingTrades` | Missing trades | bool | free | Whether some trades may have been missed in the window. Non-queryable as an explicit column; use `qualityFlags`. |
-
-> ⚠️ **Known catalog bug — unit.** The collector writes `lastTradeAgeTime` in **seconds**; the API
-> catalog declares `unit: 'ms'`. The collector is the truth. Do not divide by 1000.
 
 **Not sold — `internal: true`, catalogued but never served:**
 
 | metric key | why |
 |---|---|
-| `bookAgeTime` | Time since the book was last **re-seeded**, and **larger is healthier** — it is preserved across a warm handover, so a big value means a long uninterrupted run. Any reading of it as a staleness or freshness-of-data signal is backwards. It measures our collector, not the market. |
+| `bookAgeTime` | Time since the book was last **re-seeded**, and **larger is healthier** — it is preserved across a warm handover, so a big value means a long uninterrupted run. Any reading of it as a data-staleness or freshness indicator is backwards. It measures our collector, not the market. |
 | `seedDepth` | The number of levels the book was seeded with — again a property of our collector. |
 
 Both are accepted-and-ignored if you name them, so a request does not fail, but no value comes

@@ -118,9 +118,9 @@ tell you which of them to trust. Two companion columns are worth requesting with
 - **`bookObservedAt`** — the instant the book was actually read, which is later than the window
   close by a different amount on each venue. Use it, not `ts`, to line two venues up.
 
-**Bit 15 (32768) is not a defect.** It means the row predates the quality rail and was never
-assessed — **unchecked, not unreliable**. It is the ClickHouse column default, so the entire
-pre-migration-006 archive carries it. Say "not assessed", never "bad data".
+**The `QUALITY_UNKNOWN` flag (mask 32768) is not a defect.** It means the row predates the quality
+rail and was never assessed — **unchecked, not unreliable**. It is the ClickHouse column default, so
+the entire pre-migration-006 archive carries it. Say "not assessed", never "bad data".
 
 Where a chart draws this, the convention is: **wherever the mark is fainter or hollow, that bucket
 is flagged; solid means final.**
