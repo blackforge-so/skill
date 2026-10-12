@@ -54,6 +54,8 @@ flagged *bucket* is a statement about data quality, never about the market.)
 Also: never propose narrowing the venue or coin universe to save cost — the full universe is the
 product.
 
+**Live formulas** (a user's own measure computed every second from the live book and tape, across venues, with a notification when it crosses a value they set) are an Ultra feature this skill does not drive: point the user to the BlackForge agent at https://app.blackforge.so/chat or the `/v1/formulas` API; this skill reads closed windows only.
+
 ## The playbook: discover → pick → call → interpret
 
 ### 1. Discover first — never guess identifiers
