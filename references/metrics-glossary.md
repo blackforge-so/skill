@@ -1,9 +1,9 @@
 # BlackForge metrics glossary
 
 Every column BlackForge returns is a **measurement of the order book or trade tape** over one
-closed 5-minute window for one `(exchange, symbol)`. There are **120 catalog metrics**, and a full
-row on the top tier carries all 120 — keys, quote/USD conversion fields and quality markers
-included. (The ClickHouse table has 122 physical columns; `bookAgeTime` and `seedDepth` are
+closed 5-minute window for one `(exchange, symbol)`. There are **169 catalog metrics**, and a full
+row on the top tier carries all 169 — keys, quote/USD conversion fields and quality markers
+included. (The ClickHouse table has 171 physical columns; `bookAgeTime` and `seedDepth` are
 `internal: true`, measure our own collector rather than the market, and are never sold.) Describe
 each column to the user using the measurement wording below — never as a score, a call, or an event
 to act on.
@@ -17,17 +17,17 @@ below it the column comes back empty with an `X-BlackForge-Columns-Omitted` note
 **Units.** `quote` = the pair's quote currency (multiply by `quoteUsdRate` for USD); `base` = the
 base coin; `price` = quote per base; `ms` = milliseconds; `seconds` = seconds (not ms — check the
 unit before converting); `percent` = percent, already ×100, not a 0–1 ratio;
-`count`/`index`/`ratio`/`bool`/`usd` as named. Those eleven are the whole set the API returns.
+`count`/`index`/`ratio`/`bool`/`usd` as named; `bps` = basis points (1 bps = 0.01%). Those twelve are the whole set the API returns.
 Columns marked quote-relative are raw in the quote currency.
 
-**Families at a glance.** keys (4) · candle (4, price OHLC) · tradeFlow (10, taker buy/sell
+**Families at a glance.** keys (4) · candle (10, price OHLC plus the largest 10 s / 60 s rise and drop and the times of the high and low) · tradeFlow (10, taker buy/sell
 aggression) · bookWalls (14, cumulative resting depth within a % band of top-of-book, plus how far
-the book reaches) · orderLadders (14, resting depth in fixed 3%-wide slices) · bookMicro (11,
-liquidity added and removed, level counts, level flicker, level lifetime) · tradeTiming (8,
-silences, repeating intervals, same-size / same-instant groupings) · strong (19, counts and value
+the book reaches) · orderLadders (14, resting depth in fixed 3%-wide slices) · bookMicro (16,
+liquidity added and removed (in total and within 1% of the mid), level counts, level flicker, level lifetime and its sample count) · tradeTiming (14,
+silences, repeating intervals, same-size / same-instant groupings, sweeps by side, mirrored prints) · strong (19, counts and value
 of outsized trades at size multiples) · enrichment (18, market-cap, rank, per-pair
 CoinMarketCap liquidity/volume, plus the attention and developer-activity block) · context (9, BTC/ETH reference
-prices, fear-and-greed, exchange app-store ranks, market-wide news rate) · quality (11 physical,
+prices, fear-and-greed, exchange app-store ranks, market-wide news rate) · nearDepth (6, USD resting within 0.5 / 1 / 2% of the mid) · fillCost (6, cost of a $1k / $10k / $100k market order in bps) · tradeSize (20, USD volume and count of prints in five fixed-dollar size buckets per side) · quality (11 physical,
 **9 sold** — the two internal ones are excluded).
 
 > **The depth-band names are PERCENT, not basis points.** `upDepth30` is +30%, `upDepth400` is
@@ -64,11 +64,11 @@ _family key: `keys` · 4 metrics_
 |---|---|---|---|---|
 | `exchange` | Exchange | index | free | The exchange the snapshot came from. |
 | `symbol` | Symbol | index | free | The trading pair the snapshot describes. |
-| `ts` | Snapshot time | ms | free | The time the 5-minute window closed. |
+| `ts` | Snapshot time | ms | free | The END of the window this row covers: the row aggregates what happened after the previous window closed, up to and including this instant. |
 | `ingestedAt` | Ingested time | ms | free | The time the snapshot was written to storage. |
 
 ## Candle (price)  
-_family key: `candle` · 4 metrics_
+_family key: `candle` · 10 metrics_
 
 | metric key | label | unit | min plan | measurement |
 |---|---|---|---|---|
@@ -76,6 +76,12 @@ _family key: `candle` · 4 metrics_
 | `priceHigh` | High price | price | free | The highest price reached during the window. |
 | `priceLow` | Low price | price | free | The lowest price reached during the window. |
 | `price` | Close price | price | free | The last price of the window. |
+| `maxRise10sBps` | Largest 10 seconds rise | bps | max | The biggest climb in traded price from one print to a later print within 10 seconds, in basis points. Next to the window's high and low it shows whether the range was covered in a burst or gradually. Built from individual prints, so one outlying print shows up here. 0 with fewer than two trades. |
+| `maxDrop10sBps` | Largest 10 seconds drop | bps | max | The biggest fall in traded price from one print to a later print within 10 seconds, in basis points, reported as a positive number. Read with the matching rise: a window can hold both a sharp drop and a sharp rise. Built from individual prints, so one outlying print shows up here. 0 with fewer than two trades. |
+| `maxRise60sBps` | Largest 60 seconds rise | bps | max | The biggest climb in traded price from one print to a later print within 60 seconds, in basis points. Next to the window's high and low it shows whether the range was covered in a burst or gradually. Built from individual prints, so one outlying print shows up here. 0 with fewer than two trades. |
+| `maxDrop60sBps` | Largest 60 seconds drop | bps | max | The biggest fall in traded price from one print to a later print within 60 seconds, in basis points, reported as a positive number. Read with the matching rise: a window can hold both a sharp drop and a sharp rise. Built from individual prints, so one outlying print shows up here. 0 with fewer than two trades. |
+| `priceHighAt` | Time of the high | ms | max | When the window's highest print happened (the first print at the high), by the venue's trade time. Compare it with priceLowAt to see which extreme came first. Empty when the window had no trades. |
+| `priceLowAt` | Time of the low | ms | max | When the window's lowest print happened (the first print at the low), by the venue's trade time. Compare it with priceHighAt to see which extreme came first. Empty when the window had no trades. |
 
 ## Trade flow (taker aggression)  
 _family key: `tradeFlow` · 10 metrics_
@@ -138,7 +144,7 @@ _family key: `orderLadders` · 14 metrics_
 | `sellOrderVol21` | Ask volume 18 to 21% | quote | max | Resting sell liquidity in the slice from 18 to 21% above top of book. |
 
 ## Book microstructure — liquidity add / remove / flicker / lifetime  
-_family key: `bookMicro` · 11 metrics_
+_family key: `bookMicro` · 16 metrics_
 
 | metric key | label | unit | min plan | measurement |
 |---|---|---|---|---|
@@ -159,9 +165,14 @@ _family key: `bookMicro` · 11 metrics_
 > the same row (`upDepth30 + downDepth5`) also collapses most of the spread.
 | `levelFlickerCount` | Level flicker count | count | max | Count of price levels that appeared, vanished, then reappeared within the window (a placed-removed-placed cycle). |
 | `levelLifetimeMedianTime` | Median level lifetime | ms | max | Median lifetime, in ms, of price levels that were both created and removed inside the window. |
+| `bidLiqAddedNear` | Bid liquidity added near the mid | quote | max | The part of bid liquidity added that was placed within 1% of the mid price at the moment it was placed. The rest of bidLiqAdded was added further from the mid. Per-venue quantity: compare it across time or across pairs within one venue. |
+| `askLiqAddedNear` | Ask liquidity added near the mid | quote | max | The part of ask liquidity added that was placed within 1% of the mid price at the moment it was placed. The rest of askLiqAdded was added further from the mid. Per-venue quantity: compare it across time or across pairs within one venue. |
+| `bidLiqRemovedNear` | Bid liquidity removed near the mid | quote | max | The part of bid liquidity removed that left within 1% of the mid price at the moment it left, with the same trade netting as bidLiqRemoved. The rest of bidLiqRemoved left further from the mid. Per-venue quantity: compare it across time or across pairs within one venue. |
+| `askLiqRemovedNear` | Ask liquidity removed near the mid | quote | max | The part of ask liquidity removed that left within 1% of the mid price at the moment it left, with the same trade netting as askLiqRemoved. The rest of askLiqRemoved left further from the mid. Per-venue quantity: compare it across time or across pairs within one venue. |
+| `levelLifetimeSampleCount` | Level lifetime sample count | count | max | How many price levels both appeared and disappeared inside the window: the sample behind the median level lifetime. A median from a handful of levels is much less settled than one from thousands, so use this to weight or filter levelLifetimeMedianTime. Per-venue quantity: compare it across time or across pairs within one venue. |
 
 ## Trade timing & cadence  
-_family key: `tradeTiming` · 8 metrics_
+_family key: `tradeTiming` · 14 metrics_
 
 | metric key | label | unit | min plan | measurement |
 |---|---|---|---|---|
@@ -173,6 +184,12 @@ _family key: `tradeTiming` · 8 metrics_
 | `atc` | Same-instant trade count | count | max | Trades sharing the same millisecond timestamp in clusters of three or more. |
 | `atcMaxCluster` | Largest same-instant cluster | count | max | The biggest cluster of trades sharing one millisecond timestamp. |
 | `ltc` | Loser round-trip count | count | max | Same-quantity buy then sell round-trips closed at a loss within 30 minutes. |
+| `buySweepCount` | Buy sweeps | count | max | How many times a taker buy took out more than one price level at once: buy prints sharing one millisecond across at least two prices. Compare it with sellSweepCount to see which side was walking the book. Unlike the same-instant trade count it is split by side and needs at least two price levels. How a venue splits a fill into prints differs, so compare within a venue. |
+| `sellSweepCount` | Sell sweeps | count | max | How many times a taker sell took out more than one price level at once: sell prints sharing one millisecond across at least two prices. Compare it with buySweepCount to see which side was walking the book. How a venue splits a fill into prints differs, so compare within a venue. |
+| `buySweepVol` | Buy sweep volume | quote | max | Quote value of all prints that were part of a buy sweep. The part of buyTradeVol that came from orders taking out several price levels at once. |
+| `sellSweepVol` | Sell sweep volume | quote | max | Quote value of all prints that were part of a sell sweep. The part of sellTradeVol that came from orders taking out several price levels at once. |
+| `mirroredPairCount` | Mirrored print pairs | count | max | Pairs of opposite-side prints of nearly the same size (within 15%) printed within two seconds of each other. On busy pairs similar sizes meet by chance, so read it as a share of the pair's own trade count and against its own history rather than across pairs. Each print is counted in at most one pair. |
+| `mirroredPairVol` | Mirrored print volume | quote | max | Quote value of both prints of every mirrored pair. Compare it with the window's total traded value to see what share of the flow came in mirrored pairs. |
 
 ## Strong (outsized) trades  
 _family key: `strong` · 19 metrics_
@@ -198,6 +215,68 @@ _family key: `strong` · 19 metrics_
 | `ssVol100` | Strong sell volume 2x | quote | pro | Total value of taker-sell trades at least 2 times the average size. |
 | `ssVol200` | Strong sell volume 3x | quote | max | Total value of taker-sell trades at least 3 times the average size. |
 | `ssVol500` | Strong sell volume 6x | quote | max | Total value of taker-sell trades at least 6 times the average size. |
+
+## Near-touch depth (USD)  
+_family key: `nearDepth` · 6 metrics_
+
+Measured from the **mid** price (unlike the walls, which start at the touch and use wide % bands),
+in **USD**, cumulative. Empty when the book had no mid or the quote has no USD rate. The quality bit
+`NEAR_DEPTH_PARTIAL` marks a row where the book we hold ends inside the 2% band, so that figure is a
+floor.
+
+| metric key | label | unit | min plan | measurement |
+|---|---|---|---|---|
+| `bidDepth50bp` | Bid depth within 0.5% of mid | usd | max | USD value of resting buy orders from the mid price to 0.5% below it. USD value of the buy orders resting within 0.5% below the mid price when the book was read. The three bands are cumulative, so the difference between two of them is the size resting between those distances. Empty when the book had no mid (one side empty or crossed) or the quote has no USD rate. |
+| `bidDepth100bp` | Bid depth within 1% of mid | usd | max | USD value of resting buy orders from the mid price to 1% below it. Cumulative: includes the 0.5% band. Comparing it with the ask figure at the same distance shows how evenly the near book was balanced; (bidDepth100bp - askDepth100bp) / (bidDepth100bp + askDepth100bp) is the bid/ask balance within 1%. |
+| `bidDepth200bp` | Bid depth within 2% of mid | usd | free | USD value of resting buy orders from the mid price to 2% below it. Cumulative: includes the 0.5% and 1% bands. When the quality flag NEAR_DEPTH_PARTIAL is set, the book we hold ends inside this band and the figure is a floor; on venues that publish a limited number of levels that happens often on liquid pairs. Resting size can be cancelled at any time. |
+| `askDepth50bp` | Ask depth within 0.5% of mid | usd | max | USD value of resting sell orders from the mid price to 0.5% above it. USD value of the sell orders resting within 0.5% above the mid price when the book was read. The three bands are cumulative, so the difference between two of them is the size resting between those distances. Empty when the book had no mid (one side empty or crossed) or the quote has no USD rate. |
+| `askDepth100bp` | Ask depth within 1% of mid | usd | max | USD value of resting sell orders from the mid price to 1% above it. Cumulative: includes the 0.5% band. Comparing it with the bid figure at the same distance shows how evenly the near book was balanced; (bidDepth100bp - askDepth100bp) / (bidDepth100bp + askDepth100bp) is the bid/ask balance within 1%. |
+| `askDepth200bp` | Ask depth within 2% of mid | usd | free | USD value of resting sell orders from the mid price to 2% above it. Cumulative: includes the 0.5% and 1% bands. When the quality flag NEAR_DEPTH_PARTIAL is set, the book we hold ends inside this band and the figure is a floor; on venues that publish a limited number of levels that happens often on liquid pairs. Resting size can be cancelled at any time. |
+
+## Market order cost  
+_family key: `fillCost` · 6 metrics_
+
+Basis points against the mid, from walking the resting book at window close; includes half the
+spread. **Empty, never partial,** when the book we hold could not fill the size.
+
+| metric key | label | unit | min plan | measurement |
+|---|---|---|---|---|
+| `buyCost1kBps` | Cost of a $1,000 market buy | bps | max | What a $1,000 market buy would have cost against the mid price, in basis points, walking the resting sell orders from the best ask when the book was read. Includes half the spread, so a fill at the best price reads exactly the half-spread. Empty when the book we hold could not fill the full amount, never a partial number; on venues that publish a limited number of levels that can be the depth cap rather than a thin market. Resting orders can be cancelled at any time, so this is what the book showed, not a fill quote. |
+| `buyCost10kBps` | Cost of a $10,000 market buy | bps | max | What a $10,000 market buy would have cost against the mid price, in basis points, walking the resting sell orders from the best ask when the book was read. Includes half the spread, so a fill at the best price reads exactly the half-spread. Empty when the book we hold could not fill the full amount, never a partial number; on venues that publish a limited number of levels that can be the depth cap rather than a thin market. Resting orders can be cancelled at any time, so this is what the book showed, not a fill quote. |
+| `buyCost100kBps` | Cost of a $100,000 market buy | bps | max | What a $100,000 market buy would have cost against the mid price, in basis points, walking the resting sell orders from the best ask when the book was read. Includes half the spread, so a fill at the best price reads exactly the half-spread. Empty when the book we hold could not fill the full amount, never a partial number; on venues that publish a limited number of levels that can be the depth cap rather than a thin market. Resting orders can be cancelled at any time, so this is what the book showed, not a fill quote. |
+| `sellCost1kBps` | Cost of a $1,000 market sell | bps | max | What a $1,000 market sell would have cost against the mid price, in basis points, walking the resting buy orders from the best bid when the book was read. Includes half the spread, so a fill at the best price reads exactly the half-spread. Empty when the book we hold could not fill the full amount, never a partial number; on venues that publish a limited number of levels that can be the depth cap rather than a thin market. Resting orders can be cancelled at any time, so this is what the book showed, not a fill quote. |
+| `sellCost10kBps` | Cost of a $10,000 market sell | bps | max | What a $10,000 market sell would have cost against the mid price, in basis points, walking the resting buy orders from the best bid when the book was read. Includes half the spread, so a fill at the best price reads exactly the half-spread. Empty when the book we hold could not fill the full amount, never a partial number; on venues that publish a limited number of levels that can be the depth cap rather than a thin market. Resting orders can be cancelled at any time, so this is what the book showed, not a fill quote. |
+| `sellCost100kBps` | Cost of a $100,000 market sell | bps | max | What a $100,000 market sell would have cost against the mid price, in basis points, walking the resting buy orders from the best bid when the book was read. Includes half the spread, so a fill at the best price reads exactly the half-spread. Empty when the book we hold could not fill the full amount, never a partial number; on venues that publish a limited number of levels that can be the depth cap rather than a thin market. Resting orders can be cancelled at any time, so this is what the book showed, not a fill quote. |
+
+## Trade size buckets  
+_family key: `tradeSize` · 20 metrics_
+
+Fixed-dollar print-size buckets per taker side (<$100, $100-1k, $1k-10k, $10k-100k, >=$100k), as USD
+volume and as a count. Unlike the strong family, whose thresholds are multiples of each window's own
+mean size, these edges mean the same size on every pair. Empty when the quote has no USD rate.
+
+| metric key | label | unit | min plan | measurement |
+|---|---|---|---|---|
+| `buyVolUsdLt100` | Buy volume, prints under $100 | usd | max | USD value of taker buy prints whose individual size was below $100. The five buckets per side add up to that side's traded value, so each one reads as a share of the flow. Fixed dollar edges, so a bucket means the same size on every pair and venue. Sizes are prints as the venue reports them; an order that fills against several resting orders appears as several prints. |
+| `buyVolUsd100To1k` | Buy volume, prints $100 to $1,000 | usd | max | USD value of taker buy prints whose individual size was from $100 up to $1,000. The five buckets per side add up to that side's traded value, so each one reads as a share of the flow. Fixed dollar edges, so a bucket means the same size on every pair and venue. Sizes are prints as the venue reports them; an order that fills against several resting orders appears as several prints. |
+| `buyVolUsd1kTo10k` | Buy volume, prints $1,000 to $10,000 | usd | max | USD value of taker buy prints whose individual size was from $1,000 up to $10,000. The five buckets per side add up to that side's traded value, so each one reads as a share of the flow. Fixed dollar edges, so a bucket means the same size on every pair and venue. Sizes are prints as the venue reports them; an order that fills against several resting orders appears as several prints. |
+| `buyVolUsd10kTo100k` | Buy volume, prints $10,000 to $100,000 | usd | max | USD value of taker buy prints whose individual size was from $10,000 up to $100,000. The five buckets per side add up to that side's traded value, so each one reads as a share of the flow. Fixed dollar edges, so a bucket means the same size on every pair and venue. Sizes are prints as the venue reports them; an order that fills against several resting orders appears as several prints. |
+| `buyVolUsdGe100k` | Buy volume, prints $100,000 and over | usd | max | USD value of taker buy prints whose individual size was of $100,000 or more. The five buckets per side add up to that side's traded value, so each one reads as a share of the flow. Fixed dollar edges, so a bucket means the same size on every pair and venue. Sizes are prints as the venue reports them; an order that fills against several resting orders appears as several prints. |
+| `sellVolUsdLt100` | Sell volume, prints under $100 | usd | max | USD value of taker sell prints whose individual size was below $100. The five buckets per side add up to that side's traded value, so each one reads as a share of the flow. Fixed dollar edges, so a bucket means the same size on every pair and venue. Sizes are prints as the venue reports them; an order that fills against several resting orders appears as several prints. |
+| `sellVolUsd100To1k` | Sell volume, prints $100 to $1,000 | usd | max | USD value of taker sell prints whose individual size was from $100 up to $1,000. The five buckets per side add up to that side's traded value, so each one reads as a share of the flow. Fixed dollar edges, so a bucket means the same size on every pair and venue. Sizes are prints as the venue reports them; an order that fills against several resting orders appears as several prints. |
+| `sellVolUsd1kTo10k` | Sell volume, prints $1,000 to $10,000 | usd | max | USD value of taker sell prints whose individual size was from $1,000 up to $10,000. The five buckets per side add up to that side's traded value, so each one reads as a share of the flow. Fixed dollar edges, so a bucket means the same size on every pair and venue. Sizes are prints as the venue reports them; an order that fills against several resting orders appears as several prints. |
+| `sellVolUsd10kTo100k` | Sell volume, prints $10,000 to $100,000 | usd | max | USD value of taker sell prints whose individual size was from $10,000 up to $100,000. The five buckets per side add up to that side's traded value, so each one reads as a share of the flow. Fixed dollar edges, so a bucket means the same size on every pair and venue. Sizes are prints as the venue reports them; an order that fills against several resting orders appears as several prints. |
+| `sellVolUsdGe100k` | Sell volume, prints $100,000 and over | usd | max | USD value of taker sell prints whose individual size was of $100,000 or more. The five buckets per side add up to that side's traded value, so each one reads as a share of the flow. Fixed dollar edges, so a bucket means the same size on every pair and venue. Sizes are prints as the venue reports them; an order that fills against several resting orders appears as several prints. |
+| `buyCountUsdLt100` | Buy prints under $100 | count | max | Number of taker buy prints whose individual size was below $100. The five counts per side add up to that side's trade count. Read with the matching volume bucket to see whether a bucket's value came from many prints or a few. Sizes are prints as the venue reports them. |
+| `buyCountUsd100To1k` | Buy prints $100 to $1,000 | count | max | Number of taker buy prints whose individual size was from $100 up to $1,000. The five counts per side add up to that side's trade count. Read with the matching volume bucket to see whether a bucket's value came from many prints or a few. Sizes are prints as the venue reports them. |
+| `buyCountUsd1kTo10k` | Buy prints $1,000 to $10,000 | count | max | Number of taker buy prints whose individual size was from $1,000 up to $10,000. The five counts per side add up to that side's trade count. Read with the matching volume bucket to see whether a bucket's value came from many prints or a few. Sizes are prints as the venue reports them. |
+| `buyCountUsd10kTo100k` | Buy prints $10,000 to $100,000 | count | max | Number of taker buy prints whose individual size was from $10,000 up to $100,000. The five counts per side add up to that side's trade count. Read with the matching volume bucket to see whether a bucket's value came from many prints or a few. Sizes are prints as the venue reports them. |
+| `buyCountUsdGe100k` | Buy prints $100,000 and over | count | max | Number of taker buy prints whose individual size was of $100,000 or more. The five counts per side add up to that side's trade count. Read with the matching volume bucket to see whether a bucket's value came from many prints or a few. Sizes are prints as the venue reports them. |
+| `sellCountUsdLt100` | Sell prints under $100 | count | max | Number of taker sell prints whose individual size was below $100. The five counts per side add up to that side's trade count. Read with the matching volume bucket to see whether a bucket's value came from many prints or a few. Sizes are prints as the venue reports them. |
+| `sellCountUsd100To1k` | Sell prints $100 to $1,000 | count | max | Number of taker sell prints whose individual size was from $100 up to $1,000. The five counts per side add up to that side's trade count. Read with the matching volume bucket to see whether a bucket's value came from many prints or a few. Sizes are prints as the venue reports them. |
+| `sellCountUsd1kTo10k` | Sell prints $1,000 to $10,000 | count | max | Number of taker sell prints whose individual size was from $1,000 up to $10,000. The five counts per side add up to that side's trade count. Read with the matching volume bucket to see whether a bucket's value came from many prints or a few. Sizes are prints as the venue reports them. |
+| `sellCountUsd10kTo100k` | Sell prints $10,000 to $100,000 | count | max | Number of taker sell prints whose individual size was from $10,000 up to $100,000. The five counts per side add up to that side's trade count. Read with the matching volume bucket to see whether a bucket's value came from many prints or a few. Sizes are prints as the venue reports them. |
+| `sellCountUsdGe100k` | Sell prints $100,000 and over | count | max | Number of taker sell prints whose individual size was of $100,000 or more. The five counts per side add up to that side's trade count. Read with the matching volume bucket to see whether a bucket's value came from many prints or a few. Sizes are prints as the venue reports them. |
 
 ## Enrichment (market-cap / attention / developer activity)  
 _family key: `enrichment` · 18 metrics_

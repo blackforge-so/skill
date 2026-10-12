@@ -7,7 +7,7 @@ description: >-
   rungs, price-level lifetime, trade timing, outsized trades, or market-cap/attention enrichment;
   when they want to pull, chart or compare a metric over a time range; or when they ask which pairs
   a venue lists. Covers 9 spot exchanges (binance, bitget, bybit, coinbase, gate, kraken, kucoin,
-  mexc, okx) and ~11,800 spot pairs — 120 measurement columns per pair per closed
+  mexc, okx) and 14,000+ spot pairs — 169 measurement columns per pair per closed
   5-minute window. Trigger even when BlackForge is not named but the question is
   about crypto market data on a venue. Drives the BlackForge MCP tools (blackforge_catalog /
   blackforge_symbols / blackforge_latest / blackforge_series / blackforge_usage) or the `blackforge`
@@ -17,7 +17,7 @@ description: >-
 # BlackForge market-data
 
 BlackForge is a **raw market-data** product: for every `(exchange, symbol)` it stores one wide row
-per closed **5-minute window**, **120 measurement columns** across ~11,800 spot pairs —
+per closed **5-minute window**, **169 measurement columns** across 14,000+ spot pairs —
 order-book depth, resting-liquidity dynamics, trade-flow and trade-timing measurements, plus
 market-cap and attention enrichment, and a per-row quality bitmask. This skill lets you answer a
 plain-language market-data question by calling BlackForge's own tools and reading the rows back
@@ -59,7 +59,7 @@ product.
 ### 1. Discover first — never guess identifiers
 
 Before any keyed query, call **`blackforge_catalog`** (CLI: `blackforge catalog`). It is keyless and
-returns the 9 venues (each with its `minPlan`) and all 120 metrics with `key`, `label`, `unit`,
+returns the 9 venues (each with its `minPlan`) and all 169 metrics with `key`, `label`, `unit`,
 `family`, `description`, `howToRead` and `minPlan`. Use it to resolve:
 
 - the exact **`exchange`** identifier (lowercase: `binance`, `okx`, …), and
@@ -209,7 +209,7 @@ columns → present the ratio as measured aggressor balance.
 
 ## References
 
-- [`references/metrics-glossary.md`](references/metrics-glossary.md) — all 120 metrics grouped by
+- [`references/metrics-glossary.md`](references/metrics-glossary.md) — all 169 metrics grouped by
   family, each with its one-line measurement definition and `min plan`. Read it to map the user's
   words to the right `metric` key and to explain a column.
 - [`references/setup.md`](references/setup.md) — how to configure the MCP server or install the CLI,
