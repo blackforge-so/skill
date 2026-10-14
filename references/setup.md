@@ -28,7 +28,7 @@ returned, and the three gates behave **differently**:
 - **Columns** degrade silently — unentitled ones are dropped and an `X-BlackForge-Columns-Omitted`
   header names them. Not an error.
 - **Venues and intervals** are a hard **403** before any data is read (e.g. `5m` on a pro key,
-  whose floor is `1h`).
+  whose floor is `1h`, or `1m` on a max key; `1m` is ultra and payg).
 - **History depth** is clamped **silently and unheadered** — a `from` earlier than the plan's
   window is moved forward and you simply get fewer points, with nothing saying so.
 

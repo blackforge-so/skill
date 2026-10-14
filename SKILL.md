@@ -8,7 +8,7 @@ description: >-
   when they want to pull, chart or compare a metric over a time range; or when they ask which pairs
   a venue lists. Covers 9 spot exchanges (binance, bitget, bybit, coinbase, gate, kraken, kucoin,
   mexc, okx) and 14,000+ spot pairs — 169 measurement columns per pair per closed
-  5-minute window. Trigger even when BlackForge is not named but the question is
+  minute (1m on Ultra/PAYG, 5m/1h/1d rollups on every plan). Trigger even when BlackForge is not named but the question is
   about crypto market data on a venue. Drives the BlackForge MCP tools (blackforge_catalog /
   blackforge_symbols / blackforge_latest / blackforge_series / blackforge_usage) or the `blackforge`
   CLI; never reimplements the API. Every returned column is a measurement, not a trade call.
@@ -17,7 +17,8 @@ description: >-
 # BlackForge market-data
 
 BlackForge is a **raw market-data** product: for every `(exchange, symbol)` it stores one wide row
-per closed **5-minute window**, **169 measurement columns** across 14,000+ spot pairs —
+per closed **minute** (one-minute rows; history before the switch to them is 5-minute rows),
+**169 measurement columns** across 14,000+ spot pairs, served at `1m`, `5m`, `1h` and `1d` —
 order-book depth, resting-liquidity dynamics, trade-flow and trade-timing measurements, plus
 market-cap and attention enrichment, and a per-row quality bitmask. This skill lets you answer a
 plain-language market-data question by calling BlackForge's own tools and reading the rows back
@@ -87,7 +88,7 @@ To list the pairs a venue trades, call **`blackforge_symbols({exchange})`**
 
 | The user wants… | Call | Notes |
 |---|---|---|
-| a coin's **latest** stats on a venue (one snapshot) | `blackforge_latest({exchange, symbol, columns?})` | returns `{ ts, values }` for the last complete bucket **at the caller's plan granularity** — `5m` on max/ultra, **`1h` on pro, `1d` on free**. On the coarser tiers `ts` is the bucket start, so a free key's "latest" can be a day old. Nothing in the response says which granularity you got, so state the bucket length you are reading. Pass `columns` (metric keys) to keep the answer focused; omit for the full row. |
+| a coin's **latest** stats on a venue (one snapshot) | `blackforge_latest({exchange, symbol, columns?})` | returns `{ ts, values }` for the last complete bucket **at the caller's plan granularity** — **`1m` on ultra and payg** (the 5-minute record until that venue's one-minute rows exist), `5m` on max, **`1h` on pro, `1d` on free**. On the coarser tiers `ts` is the bucket start, so a free key's "latest" can be a day old. Nothing in the response says which granularity you got, so state the bucket length you are reading. Pass `columns` (metric keys) to keep the answer focused; omit for the full row. |
 | how a metric **moved over a time range** | `blackforge_series({exchange, symbol, metric, from, to, interval})` | returns `{ points: [{ ts, value }] }`, `ts` in epoch ms. One metric per call. |
 | **which pairs** a venue lists | `blackforge_symbols({exchange})` | |
 | **usage / quota** left | `blackforge_usage()` | recent daily usage + rows remaining this month. |
@@ -95,13 +96,18 @@ To list the pairs a venue trades, call **`blackforge_symbols({exchange})`**
 CLI fallback maps 1:1: `blackforge latest …`, `blackforge series …`, `blackforge symbols …`,
 `blackforge usage`. Prefer `--output json` when you will parse the result.
 
-**Choosing `interval` for a series.** The only valid values are **`5m`, `1h`, `1d`** — anything
+**Choosing `interval` for a series.** The only valid values are **`1m`, `5m`, `1h`, `1d`** — anything
 else 400s. The interval is **plan-gated as well as size-gated**: asking finer than your plan's floor
-returns a **403**, not fewer points. **`5m` is max/ultra only; `pro` floors at `1h`; `free` floors at
-`1d`.** Pick the coarsest interval that answers the question, and on a 403 step one rung coarser
-(`5m` → `1h` → `1d`) rather than reporting no data. Guard the 50k-point cap — points ≈ span ÷ interval:
+returns a **403**, not fewer points. **`1m` is ultra and payg only (payg bills a 1m row at 5x a 5m
+row); `max` floors at `5m`; `pro` at `1h`; `free` at `1d`.** Pick the coarsest interval that answers
+the question, and on a 403 step one rung coarser (`1m` → `5m` → `1h` → `1d`) rather than reporting
+no data. **`1m` rows only exist from the switch to one-minute rows on** (`availableFrom["1m"]` in
+`blackforge_catalog`; null means not yet): a `1m` series over an earlier range comes back empty, so
+use `5m` there, which covers all history. Guard the 50k-point cap — points ≈ span ÷ interval; when a
+range holds more, the response keeps the NEWEST buckets and says `truncated: true`:
 
-- hours to a few days → `5m` on max/ultra · `1h` on pro · `1d` on free
+- an hour or two, minute by minute → `1m` on ultra/payg (50k points ≈ 34 days at `1m`)
+- hours to a few days → `5m` on max/ultra/payg · `1h` on pro · `1d` on free
 - about a week to a month → `1h` on max/ultra and pro · `1d` on free
 - multiple months → `1d` (every plan)
 
@@ -116,6 +122,15 @@ When you present numbers, define each column with its catalog `description` / `h
 plain measurement terms — "taker-buy volume was 2.3× taker-sell volume", "median resting-level
 lifetime dropped from 4.1s to 0.6s" — and stop there. Do not translate a measurement into a buy/sell
 call or label it with any banned word.
+
+**Rollup notes.** The rows are measured per minute; `5m`, `1h` and `1d` are rollups of them (sums
+for flows, last value for book state, count-weighted means for trade averages). For most columns the
+`5m` rollup equals what a native 5-minute measurement would read. About three dozen do not, because
+they are measured within each minute (the 19 strong-trade columns against a trailing five-minute
+mean, liquidity removed, mirrored pairs, level flicker and lifetime, equal-size groups, the trade-gap
+mode, the 10 s / 60 s rise and drop). Those carry a one-sentence `rollupNote` in `blackforge_catalog`;
+when you report one at `5m` or coarser, say how it was rolled up, and do not compare its level across
+the switch to one-minute rows as if nothing changed.
 
 **Always read `qualityFlags`.** It is the one column that qualifies every other column on the row,
 it is free on every plan, and it is deliberately queryable — request it alongside whatever else you
@@ -162,8 +177,8 @@ Three things to recognise and explain:
   doesn't include it. Tell the user which tier includes them and point to **blackforge.so/pricing**.
   Never report it as "there is no data for that".
 - A **`403`** on a venue or interval means the same at the request level (e.g. a `pro`-only venue on
-  a free key, or a `5m` interval on a pro key, whose floor is `1h`). Explain the plan gap and the
-  upgrade path. There is **no `1m` interval** — do not go looking for a plan that unlocks one.
+  a free key, or a `5m` interval on a pro key, whose floor is `1h`, or `1m` on a max key). Explain
+  the plan gap and the upgrade path (`1m` is ultra and payg).
 - **History depth is clamped SILENTLY — there is no header and no error.** If you ask for a `from`
   earlier than the plan's window, the API quietly moves it forward to the plan's floor and returns
   a shorter `points` array. Nothing in the response says it happened, so a short series is
@@ -196,13 +211,13 @@ unsure of the symbol (`ETHUSDT`) → `blackforge_latest({exchange:'binance', sym
 columns:['price','downDepth5','downDepth10','upDepth30','upDepth100','qualityFlags']})`. Report each as its
 measurement: "bid depth within −5% of top-of-book: \$X; ask depth to +30%: \$Y", noting they are
 resting-liquidity sums in the quote currency at the last complete bucket for that key's plan
-(5 min on max/ultra, 1 h on pro, 1 d on free), and reading `qualityFlags` before trusting them.
+(1 min on ultra/payg, 5 min on max, 1 h on pro, 1 d on free), and reading `qualityFlags` before trusting them.
 
 **"Chart the bid-ask spread for BTC-USDT on OKX last week."**
 → catalog — **there is no spread key.** Say so, then derive it: two `blackforge_series` calls
 (`bestAsk` and `bestBid`) over the same range and subtract point by point. Use `interval:'1h'` for a
-week (it is inside every paid plan's floor and stays well under the point cap; `5m` needs max/ultra
-and 7 days of it approaches the cap anyway; a free key gets `1d`). State the window and the interval
+week (it is inside every paid plan's floor and reads cleanly; `5m` needs max or above and `1m`
+ultra/payg; a free key gets `1d`). State the window and the interval
 you actually used, and describe the line as the measured quantity over time, not as a trade cue.
 
 **"Compare taker buy vs sell volume for SOL on Binance today."**

@@ -1,7 +1,8 @@
 # BlackForge metrics glossary
 
 Every column BlackForge returns is a **measurement of the order book or trade tape** over one
-closed 5-minute window for one `(exchange, symbol)`. There are **169 catalog metrics**, and a full
+closed bucket for one `(exchange, symbol)`: a minute at `1m`, or a `5m` / `1h` / `1d` rollup of
+minutes (5-minute rows for history before the switch to one-minute rows). There are **169 catalog metrics**, and a full
 row on the top tier carries all 169 — keys, quote/USD conversion fields and quality markers
 included. (The ClickHouse table has 171 physical columns; `bookAgeTime` and `seedDepth` are
 `internal: true`, measure our own collector rather than the market, and are never sold.) Describe
