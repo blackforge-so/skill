@@ -140,8 +140,9 @@ full bit table ships on the catalog entry for `qualityFlags` as `bits`, and each
 the trade columns on the same row sound. Read the bit table from the catalog rather than hardcoding
 bit numbers.
 
-Nothing in a row is ever hidden, filtered or nulled. Every value is exactly as measured; the flags
-tell you which of them to trust. Two companion columns are worth requesting with it:
+Nothing measured in a row is ever hidden, filtered or adjusted. Every value is exactly as measured;
+the flags tell you which of them to trust. The one thing never served is a placeholder: a column a
+row did not measure at all is `null`. Two companion columns are worth requesting with it:
 
 - **`lastTradeAgeTime`** — how long before the window closed the pair last traded, `0` when the
   window itself contained a trade. About half of all windows contain no trade, and their candle
@@ -153,6 +154,15 @@ tell you which of them to trust. Two companion columns are worth requesting with
 **The `QUALITY_UNKNOWN` flag (mask 32768) is not a defect.** It means the row predates the quality
 rail and was never assessed — **unchecked, not unreliable**. It is the ClickHouse column default, so
 the entire pre-migration-006 archive carries it. Say "not assessed", never "bad data".
+
+**`BOOK_EMPTY_AT_VENUE` (mask 131072) is not a defect either.** The venue itself publishes no order
+book for the pair, so the empty book (it always comes with `BOOK_EMPTY`) is a fact about the venue.
+Say "the venue quotes no book for this pair", never "the book was lost".
+
+**`TRADES_BACKFILLED` (mask 262144)** marks a window rebuilt later from the venue's public trade
+archive because the live window was lost. Its trade columns are real measurements; its book,
+enrichment and context columns come back `null`, and coarser buckets (1h, 1d) average only the
+windows that measured them. Report the trade figures and say the book was not observed then.
 
 Where a chart draws this, the convention is: **wherever the mark is fainter or hollow, that bucket
 is flagged; solid means final.**
