@@ -148,8 +148,15 @@ row did not measure at all is `null`. Two companion columns are worth requesting
   window itself contained a trade. About half of all windows contain no trade, and their candle
   carries the last traded price forward rather than inventing one. A large value means the price is
   real but old.
-- **`bookObservedAt`** — the instant the book was actually read, which is later than the window
-  close by a different amount on each venue. Use it, not `ts`, to line two venues up.
+- **`bookObservedAt`**: the instant on our clock that the row's order book describes. From each
+  venue's date in `availableFrom.bookOnBoundary` (`blackforge_catalog`; null means not yet) the
+  book is read as it stood at the window end, so `bookObservedAt` equals `ts` and two venues line
+  up at the same `ts`. A row where it is later than `ts` (every earlier row) read the book late by
+  the difference, by a different amount on each venue, so do not compare depth or best bid and ask
+  across venues on such rows as if they were simultaneous. The book event columns (liquidity added
+  and removed, level changes, flicker, lifetimes) follow the same switch: on boundary rows they
+  cover the same window as the trades. The order book columns carry a one-sentence
+  `bookTimingNote` in `blackforge_catalog` saying so.
 
 **The `QUALITY_UNKNOWN` flag (mask 32768) is not a defect.** It means the row predates the quality
 rail and was never assessed — **unchecked, not unreliable**. It is the ClickHouse column default, so
