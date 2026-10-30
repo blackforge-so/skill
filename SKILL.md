@@ -2,12 +2,12 @@
 name: blackforge
 description: >-
   Answer crypto market-data questions with BlackForge. Use this skill whenever the user asks about
-  order-book or trade data for a coin on a spot venue — its latest stats on an exchange,
+  order-book or trade data for a coin on a spot venue: its latest stats on an exchange,
   order-book depth or resting/pulled liquidity for a pair, taker buy-vs-sell volume, order-ladder
   rungs, price-level lifetime, trade timing, outsized trades, or market-cap/attention enrichment;
   when they want to pull, chart or compare a metric over a time range; or when they ask which pairs
-  a venue lists. Covers 9 spot exchanges (binance, bitget, bybit, coinbase, gate, kraken, kucoin,
-  mexc, okx) and 14,000+ spot pairs — 169 measurement columns per pair per closed
+  a venue lists. Covers the major spot exchanges (binance, bitget, bybit, coinbase, gate, kraken,
+  kucoin, mexc, okx) and 14,000+ spot pairs, with 150+ measurement columns per pair per closed
   minute (1m on Ultra/PAYG, 5m/1h/1d rollups on every plan). Trigger even when BlackForge is not named but the question is
   about crypto market data on a venue. Drives the BlackForge MCP tools (blackforge_catalog /
   blackforge_symbols / blackforge_latest / blackforge_series / blackforge_usage) or the `blackforge`
