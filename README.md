@@ -5,10 +5,10 @@ agent (Claude Code, Cursor, and others) to answer crypto **market-data** questio
 the [BlackForge](https://blackforge.so) MCP tools (preferred) or the `blackforge` CLI. It is a thin
 orchestration + interpretation layer — it never reimplements the API.
 
-BlackForge stores one wide row per `(exchange, symbol)` per closed minute (served at 1m on Ultra/PAYG, and as 5m/1h/1d rollups on every plan) — 169
+BlackForge stores one wide row per `(exchange, symbol)` per closed minute (served at 1m on Ultra/PAYG, and as 5m/1h/1d rollups on every plan): 169
 measurement columns (order-book depth and depth walls, order-ladder rungs, resting-liquidity
 add/withdraw, price-level lifetime, trade timing, outsized-trade counts, market-cap and attention
-enrichment, and a per-row quality bitmask) across 9 spot exchanges and 14,000+ spot pairs. The skill knows
+enrichment, and a per-row quality bitmask) across the major spot exchanges and 14,000+ spot pairs. The skill knows
 that vocabulary and the discover → pick → call → interpret playbook, and it frames every returned
 column as a **measurement** with a definition, never as a trade call.
 
