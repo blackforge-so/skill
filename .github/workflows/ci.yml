@@ -3,6 +3,8 @@ name: ci
 on:
   push:
   pull_request:
+  # The live catalog moves without a commit here: re-check by hand, as the brand.
+  workflow_dispatch:
 
 permissions:
   contents: read
