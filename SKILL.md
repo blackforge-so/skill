@@ -1,17 +1,17 @@
 ---
 name: blackforge
 description: >-
-  Answer crypto market-data questions with BlackForge. Use this skill whenever the user asks about
-  order-book or trade data for a coin on a spot venue: its latest stats on an exchange,
-  order-book depth or resting/pulled liquidity for a pair, taker buy-vs-sell volume, order-ladder
-  rungs, price-level lifetime, trade timing, outsized trades, or market-cap/attention enrichment;
-  when they want to pull, chart or compare a metric over a time range; or when they ask which pairs
-  a venue lists. Covers the major spot exchanges (binance, bitget, bybit, coinbase, gate, kraken,
-  kucoin, mexc, okx) and 14,000+ spot pairs, with 150+ measurement columns per pair per closed
-  minute (1m on Ultra/PAYG, 5m/1h/1d rollups on every plan). Trigger even when BlackForge is not named but the question is
-  about crypto market data on a venue. Drives the BlackForge MCP tools (blackforge_catalog /
-  blackforge_symbols / blackforge_latest / blackforge_series / blackforge_usage) or the `blackforge`
-  CLI; never reimplements the API. Every returned column is a measurement, not a trade call.
+  Answer crypto market-data questions with BlackForge. Use it whenever the user asks about spot
+  order-book or trade data (latest stats, order-book depth, resting or pulled liquidity,
+  taker buy-vs-sell volume, order-ladder rungs, price-level lifetime, trade timing, outsized
+  trades, market-cap or attention enrichment) or about crypto futures and perpetual contracts
+  (funding rates, open interest, mark and index price, basis against spot, taker flow,
+  liquidations); when they want to pull, chart or compare a metric over a time range; or when they
+  ask which pairs or contracts a venue lists. Covers the major spot exchanges (14,000+ pairs, 150+
+  measurement columns per pair per closed minute) and the linear futures contracts on the major
+  futures venues. Trigger even when BlackForge is not named but the question is about crypto
+  market data on a venue. Drives the BlackForge MCP tools (blackforge_*, blackforge_futures_*) or
+  the `blackforge` CLI, never the raw API. Every column is a measurement, not a trade call.
 ---
 
 # BlackForge market-data
@@ -23,6 +23,10 @@ order-book depth, resting-liquidity dynamics, trade-flow and trade-timing measur
 market-cap and attention enrichment, and a per-row quality bitmask. This skill lets you answer a
 plain-language market-data question by calling BlackForge's own tools and reading the rows back
 **as measurements**.
+
+It also records the **linear futures contracts** (perpetual and dated) on the major futures venues:
+prices, funding, open interest, taker flow and liquidations, one row per contract per minute. That
+data has its own tools, catalog block and limits; see [Futures](#futures-funding-open-interest-basis-and-liquidations).
 
 You are a thin orchestration + interpretation layer. **Never** build HTTP requests, curl the API,
 or hardcode an endpoint URL. Always go through the MCP tools or the `blackforge` CLI. Your job is to
@@ -203,6 +207,7 @@ Three things to recognise and explain:
 
   **Never narrate this as retention.** "BlackForge only has data going back two weeks" is wrong and
   is the single easiest mistake to make here. **Retention is infinite — nothing is ever deleted.**
+  (That is the spot archive. Futures are the one exception: see the futures history below.)
   The window is an *entitlement*: how far back this key may read. Compare the first timestamp you
   got against the `from` you asked for, and when it moved, say so — "your plan reads back 2 weeks,
   so the series starts there; the archive itself goes back further" — then point at
@@ -219,6 +224,118 @@ for quota, say so plainly.
 3. If neither exists, don't hand-roll API calls — tell the user how to set one up and point them to
    [`references/setup.md`](references/setup.md) (MCP config block, CLI install, and where to get a
    key at app.blackforge.so → API).
+
+## Futures: funding, open interest, basis and liquidations
+
+The futures data is a separate table: one row per **linear futures contract** (perpetual or dated,
+quoted and margined in its quote currency; coin-margined contracts are not recorded) per closed
+minute, on binance, bitget, bybit, gate, kucoin, mexc and okx. It has its own tools, its own catalog
+block, its own quality bits and its own history window. Everything in the spot playbook above about
+framing (measurements, never calls), omitted columns and 403s applies here too.
+
+### Discover
+
+`blackforge_catalog` (CLI `blackforge catalog --futures`) carries a `futures` block: `venues` (each
+with its `minPlan` and its `liquidations` coverage), `metrics` (each with `key`, `unit`, `family`,
+`rollup`, `minPlan`, and `nullOn` for venues where it is always null), `qualityBits` (the futures
+flag table), `liquidationEvents` (the plan the event feed needs), `availableFrom` and `historyDays`.
+[`references/futures-glossary.md`](references/futures-glossary.md) indexes every futures column.
+
+**Contracts are spelled the venue's way**: binance, bybit and bitget `BTCUSDT`; okx `BTC-USDT-SWAP`;
+gate and mexc `BTC_USDT`; kucoin `XBTUSDTM`; dated contracts carry the expiry (`BTCUSDT_261225`,
+`BTCUSDT-25DEC26`). List them with `blackforge_futures_symbols({exchange})`. To find the same coin on
+every venue, use `baseAsset` (normalised: kucoin XBT reads BTC), never string surgery on symbols.
+
+### Pick the tool
+
+| The user wants… | Call | Notes |
+|---|---|---|
+| a contract's **latest** funding, open interest or prices | `blackforge_futures_latest({exchange, symbol, columns?})` | last complete bucket at the plan's interval; the response names its `interval`. Text columns (`baseAsset`, `quoteAsset`, `contractType`) come back as strings. |
+| how funding, open interest, volume or liquidations **moved** | `blackforge_futures_series({exchange, symbol, metric, from, to, interval})` | numeric columns only; same 50k-point cap and `truncated` flag as spot. Flows are summed into a bucket; prices, funding and open interest are the bucket's last minute. |
+| the **same coin across venues**, or the highest/lowest values on a venue | `blackforge_futures_top({metric, baseAsset?, exchange?, contractType?, order?, limit?})` | ranks contracts on the latest complete bucket; `baseAsset:'BTC'` with no `exchange` is the cross-venue table. `limit` up to 100. |
+| individual **liquidation events** | `blackforge_futures_liquidations({exchange?, symbol?, side?, from?, to?, limit?})` | newest first, last hour by default, `limit` up to 1000. Max, Ultra and PAYG only. |
+| which contracts a venue lists | `blackforge_futures_symbols({exchange})` | not metered. |
+
+CLI fallback: `blackforge futures latest|series|top|liquidations|symbols` with the same parameters
+(`--base-asset`, `--contract-type`, `--side`, `--limit`), `--output json` to parse.
+
+### Plans and history
+
+| plan | futures venues | finest interval | history | liquidation columns and events |
+|---|---|---|---|---|
+| free | binance, gate, mexc | `1d` | last 14 days | no |
+| pro | all | `1h` | rolling 60 days | no |
+| max | all | `5m` | rolling 60 days | yes |
+| ultra, payg | all | `1m` | rolling 60 days | yes |
+
+The `minPlan` fields in the futures catalog are canonical if this table ever disagrees. A venue
+outside the plan, an interval finer than the floor, a ranking on a liquidation column below Max and
+the event feed below Max are each a **403** with an upgrade URL; a liquidation column in
+`futures_latest` or `futures_series` below Max is dropped and named in `columnsOmitted`.
+
+**Futures history IS retention.** Futures rows are kept for a rolling 60 days, from
+7 November 2026 (`historyDays`, `availableFrom`); older ones are deleted. So unlike spot, a futures
+series that starts later than asked may have hit the end of the data, not only the plan's window
+(Free reads 14 days). A `from` before the window is moved forward silently. Compare the first `ts`
+with `availableFrom` and the plan's window and say which one cut it. Never call it a full archive.
+
+### Read the columns honestly
+
+- **Funding.** `fundingRate` is a fraction for ONE funding interval (`0.0001` = 0.01%); positive means
+  longs pay shorts. Venues and contracts settle at different intervals (1 h, 4 h or 8 h): the step
+  between successive `nextFundingTime` values is the interval. Before comparing rates across venues,
+  either compare like intervals or convert, and say which you did. `predictedFundingRate` is the
+  venue's own published estimate of the next rate and is null on venues that publish none
+  (`nullOn`). Dated contracts carry no funding (null).
+- **Open interest.** `openInterest` is in coins, `openInterestValue` in the quote currency; compare
+  venues on `openInterestValue`. On binance the value can be a few minutes old: read
+  `openInterestAt`, and the `OI_STALE` flag marks reads older than 10 minutes.
+- **Basis.** Two measurements, say which one you report. The venue's own premium: `markPrice` against
+  `indexPrice` on the same futures row (the index is the venue's spot reference). Against BlackForge
+  spot: the futures `markPrice` (or `lastPrice`) against the spot `price` of the same coin on the same
+  venue, at the same `ts` and `interval` (both label buckets the same way), as
+  `(futures / spot - 1) × 10,000` bps. The spot pair has its own symbol (okx `BTC-USDT` against
+  `BTC-USDT-SWAP`, kucoin `BTC-USDT` against `XBTUSDTM`): resolve it with `blackforge_symbols`. The two
+  are read in the same minute, not the same millisecond, and each side needs its venue in the plan.
+- **Taker flow.** `takerBuyVolume / volume` is the taker buy share; `volume - takerBuyVolume` is the
+  taker sell volume. Same in quote units with the `Quote` columns.
+- **Liquidations.** `side` is the POSITION liquidated: a long is closed by a forced sell, a short by a
+  forced buy. Coverage is per venue in `futures.venues[].liquidations`: `complete` (every event),
+  `lowerBound` (the venue throttles its feed, so a cascade is undercounted) or null (no feed: the
+  liquidation columns are null there). Any total that includes a lower-bound venue is "at least".
+  okx also delivers part of its feed minutes late, so its event feed holds liquidations its minute
+  columns do not. `blackforge_futures_liquidations` names the lower-bound venues in a result in its
+  `feedNote`.
+- **Quality.** Futures rows have their OWN flag table (`futures.qualityBits`), not the spot bits: the
+  same bit number means a different thing. `QUOTE_MISSING` (no snapshot that minute: prices, funding
+  and open interest null), `TRADES_PARTIAL` (volume and counts are lower bounds, the first minute
+  after a reconnect), `LIQ_PARTIAL`, `OI_STALE`, `BAR_NOT_FINAL`. Name the flag, never the number, and
+  read `qualityFlags` before trusting an unusual value.
+
+### Futures worked examples
+
+**"What's BTC funding across exchanges right now?"**
+→ `blackforge_futures_top({metric:'fundingRate', baseAsset:'BTC', contractType:'perpetual'})` →
+report each venue's rate as a percentage per its own interval (`0.0001` → 0.01% per interval), state
+the bucket `ts`, and say the intervals differ before ranking them against each other (read
+`nextFundingTime` on the contracts you compare).
+
+**"How has ETH open interest on Binance changed over the last three days?"**
+→ `blackforge_futures_series({exchange:'binance', symbol:'ETHUSDT', metric:'openInterestValue',
+from, to, interval:'1h'})` (a free key gets `1d`) → report the change in the quote currency as a
+measured quantity, with the window and interval used; check `qualitySummary` for `OI_STALE`.
+
+**"What's the basis between the BTC perp and spot on OKX?"**
+→ `blackforge_futures_latest({exchange:'okx', symbol:'BTC-USDT-SWAP', columns:['markPrice','indexPrice']})`
+and `blackforge_latest({exchange:'okx', symbol:'BTC-USDT', columns:['price']})` at the same `ts` (or
+two series at the same interval for a history) → report the premium over the venue index and over
+BlackForge spot in bps, and say they are read in the same minute.
+
+**"Show me the biggest liquidations in the last hour."**
+→ `blackforge_futures_liquidations({limit:1000})` (Max and up) → sort the events by `notional`
+yourself (the feed is newest first), report side as the position liquidated, and carry the
+`feedNote` caveat: on lower-bound venues the list is incomplete. If `truncated` is true, narrow the
+window and say so.
 
 ## Worked examples
 
@@ -246,5 +363,8 @@ columns → present the ratio as measured aggressor balance.
 - [`references/metrics-glossary.md`](references/metrics-glossary.md) — all 169 metrics grouped by
   family, each with its one-line measurement definition and `min plan`. Read it to map the user's
   words to the right `metric` key and to explain a column.
+- [`references/futures-glossary.md`](references/futures-glossary.md): every futures column by family,
+  with unit, `min plan` and what it measures, the futures quality bits and the liquidation event
+  fields.
 - [`references/setup.md`](references/setup.md) — how to configure the MCP server or install the CLI,
   and where to get an API key.

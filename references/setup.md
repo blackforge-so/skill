@@ -75,6 +75,11 @@ Restart the agent. The tools become available as:
 | `blackforge_latest` | latest closed 5-min bucket | `exchange`, `symbol`, `columns?` |
 | `blackforge_series` | a metric over a time range | `exchange`, `symbol`, `metric`, `from`, `to`, `interval` |
 | `blackforge_usage` | recent usage + rows remaining | *(none)* |
+| `blackforge_futures_symbols` | contracts a futures venue lists | `exchange` |
+| `blackforge_futures_latest` | latest bucket for one futures contract | `exchange`, `symbol`, `columns?` |
+| `blackforge_futures_series` | one futures column over a time range | `exchange`, `symbol`, `metric`, `from`, `to`, `interval` |
+| `blackforge_futures_top` | contracts ranked by one column, one venue or all | `metric`, `baseAsset?`, `exchange?`, `contractType?`, `order?`, `limit?` |
+| `blackforge_futures_liquidations` | liquidation events, newest first (Max and up) | `exchange?`, `symbol?`, `side?`, `from?`, `to?`, `limit?` |
 
 Optional env `BLACKFORGE_BASE_URL` overrides the **origin** for a local/dev server
 (e.g. `http://localhost:3001/api`). It is the origin, **not** the `/v1` base above: both clients
@@ -111,6 +116,15 @@ blackforge series  --exchange binance --symbol BTCUSDT \
                    --metric downDepth5 --interval 1h \
                    --from 2026-07-01T00:00:00Z --to 2026-07-08T00:00:00Z --output json
 blackforge usage
+
+# futures (linear contracts)
+blackforge catalog --futures                                    # keyless: futures venues + columns
+blackforge futures symbols --exchange okx
+blackforge futures latest  --exchange bybit --symbol BTCUSDT --columns markPrice,fundingRate,openInterestValue
+blackforge futures series  --exchange okx --symbol BTC-USDT-SWAP --metric fundingRate --interval 1h \
+                           --from 2026-11-08T00:00:00Z --to 2026-11-09T00:00:00Z --output json
+blackforge futures top     --metric fundingRate --base-asset BTC --contract-type perpetual
+blackforge futures liquidations --exchange bybit --side long --limit 200
 ```
 
 Global options: `--output table|json|csv` (default table on a TTY, json when piped), `--api-key`,

@@ -53,10 +53,11 @@ const fail = (file, msg) => problems.push(`${file}: ${msg}`);
 // 0. The live truth.
 // ---------------------------------------------------------------------------
 let metrics;
+let futures;
 try {
   const res = await fetch(CATALOG_URL);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  ({ metrics } = await res.json());
+  ({ metrics, futures } = await res.json());
   if (!Array.isArray(metrics) || metrics.length === 0) throw new Error('no metrics in the response');
 } catch (error) {
   console.error(`catalog-sync: could not read ${CATALOG_URL} — ${error.message}`);
@@ -177,7 +178,14 @@ for (const m of glossary.matchAll(SUBTITLE_RE)) {
 // Only counts that QUALIFY metrics/columns are checked, and the per-family subtitles above are
 // skipped because step 3 already checked them against their own family. A units note reading
 // "3%-wide slices" never matches, which is what keeps this specific enough to be worth having.
-const PROSE_FILES = ['SKILL.md', 'README.md', 'references/setup.md', 'references/metrics-glossary.md'];
+const PROSE_FILES = [
+  'SKILL.md',
+  'README.md',
+  'references/setup.md',
+  'references/metrics-glossary.md',
+  // No futures count is ever written: a number here that is not a spot count fails.
+  'references/futures-glossary.md',
+];
 const COUNT_RE = /\b(\d+)\s+(?:catalog\s+|measurement\s+|metric\s+|physical\s+|sold\s+)?(?:metrics|columns|metric definitions)\b/g;
 const ALLOWED = new Set([...Object.values(LADDER_COUNTS), PHYSICAL]);
 
@@ -193,6 +201,83 @@ for (const file of PROSE_FILES) {
 }
 
 // ---------------------------------------------------------------------------
+// 5. Futures. `references/futures-glossary.md` documents the catalog's `futures` block, which
+//    is its own shape (`futures.metrics`, `futures.qualityBits`) and never touches the spot
+//    counts above. Same two-way completeness, unit and min-plan checks as the spot glossary,
+//    plus the futures bit table. A futures glossary with no `futures` key in the live catalog
+//    FAILS: a file the catalog cannot vouch for is an unknown answer, not a passing one.
+//    Futures counts are deliberately not written anywhere (copy rule), so there is no
+//    family-count step here; step 4 already fails any stray count in the file.
+// ---------------------------------------------------------------------------
+const futuresFile = 'references/futures-glossary.md';
+const futuresGlossary = read(futuresFile);
+let futuresSummary = '';
+
+if (!futures || !Array.isArray(futures.metrics)) {
+  fail(futuresFile, 'documents futures columns, but the live catalog serves no `futures` block');
+} else {
+  const sold = futures.metrics.filter((m) => !m.internal);
+  const liveF = new Map(sold.map((m) => [m.key, m]));
+  const internalF = new Set(futures.metrics.filter((m) => m.internal).map((m) => m.key));
+
+  const fRows = [];
+  for (const line of futuresGlossary.split('\n')) {
+    const m = line.match(/^\|\s*`([A-Za-z0-9_]+)`\s*\|([^|]*)\|([^|]*)\|([^|]*)\|/);
+    if (m) fRows.push({ key: m[1], label: m[2].trim(), unit: m[3].trim(), minPlan: m[4].trim() });
+  }
+  const fDocumented = new Map(fRows.map((r) => [r.key, r]));
+
+  for (const key of [...fDocumented.keys()].filter((k, i, a) => a.indexOf(k) !== i)) {
+    fail(futuresFile, `\`${key}\` is documented more than once`);
+  }
+  for (const m of sold) {
+    if (!fDocumented.has(m.key)) {
+      fail(futuresFile, `MISSING \`${m.key}\` (${m.family}/${m.unit}/${m.minPlan}): the catalog sells it and this file claims to list every futures column`);
+    }
+  }
+  for (const r of fRows) {
+    if (internalF.has(r.key)) fail(futuresFile, `\`${r.key}\` is internal (sold on no plan) but sits in a column table`);
+    else if (!liveF.has(r.key)) fail(futuresFile, `documents \`${r.key}\`, which the futures catalog does not serve`);
+  }
+  for (const r of fRows) {
+    const c = liveF.get(r.key);
+    if (!c) continue;
+    if (bare(r.unit) !== c.unit) fail(futuresFile, `\`${r.key}\` unit is "${r.unit}", live says "${c.unit}"`);
+    if (r.minPlan !== (c.minPlan ?? 'free')) fail(futuresFile, `\`${r.key}\` min plan is "${r.minPlan}", live says "${c.minPlan}"`);
+  }
+
+  // The futures bit table: rows written as "| bit | mask | `NAME` | ... |".
+  const bitRows = new Map();
+  for (const line of futuresGlossary.split('\n')) {
+    const m = line.match(/^\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*`([A-Z_]+)`\s*\|/);
+    if (m) bitRows.set(m[3], { bit: Number(m[1]), mask: Number(m[2]) });
+  }
+  const liveBits = Array.isArray(futures.qualityBits) ? futures.qualityBits : [];
+  if (liveBits.length === 0) fail(futuresFile, 'the live futures block serves no `qualityBits` table');
+  for (const b of liveBits) {
+    const doc = bitRows.get(b.name);
+    if (!doc) fail(futuresFile, `futures quality bit \`${b.name}\` (mask ${b.mask}) is not in the bit table`);
+    else if (doc.bit !== b.bit || doc.mask !== b.mask) {
+      fail(futuresFile, `\`${b.name}\` is written as bit ${doc.bit} / mask ${doc.mask}, live says bit ${b.bit} / mask ${b.mask}`);
+    }
+  }
+  for (const name of bitRows.keys()) {
+    if (!liveBits.some((b) => b.name === name)) fail(futuresFile, `bit table names \`${name}\`, which the futures catalog does not serve`);
+  }
+
+  // The history window the prose states must be the live one.
+  if (typeof futures.historyDays === 'number') {
+    for (const m of futuresGlossary.matchAll(/rolling (\d+)-day/g)) {
+      if (Number(m[1]) !== futures.historyDays) {
+        fail(futuresFile, `says a rolling ${m[1]}-day window, live historyDays is ${futures.historyDays}`);
+      }
+    }
+  }
+
+  futuresSummary = ` Futures: ${sold.length} sold columns, ${fDocumented.size} glossary rows, ${liveBits.length} quality bits.`;
+}
+
+// ---------------------------------------------------------------------------
 if (problems.length > 0) {
   console.error(`catalog-sync: ${problems.length} problem(s) — the skill's docs disagree with ${CATALOG_URL}\n`);
   for (const p of problems) console.error(`  ${p}`);
@@ -203,5 +288,6 @@ if (problems.length > 0) {
 console.log(
   `catalog-sync: docs match the live catalog — ${TOTAL} sold metrics ` +
     `(${PHYSICAL} physical), ladder ${LADDER_COUNTS.free} / ${LADDER_COUNTS.pro} / ${LADDER_COUNTS.max}, ` +
-    `${documented.size} glossary rows, ${liveFamilies.size} families.`,
+    `${documented.size} glossary rows, ${liveFamilies.size} families.` +
+    futuresSummary,
 );

@@ -1,0 +1,23 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The skill has no build: the gate is that its docs agree with the LIVE public
+      # catalog (spot glossary, futures glossary, every prose count). It fails when the
+      # catalog cannot be read rather than passing against nothing.
+      - run: node scripts/check-catalog-sync.mjs
+      - run: node -e 'JSON.parse(require("fs").readFileSync("evals/trigger-eval.json","utf8"))'
+      - run: bash -n scripts/latest-json.sh

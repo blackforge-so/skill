@@ -8,7 +8,9 @@ orchestration + interpretation layer — it never reimplements the API.
 BlackForge stores one wide row per `(exchange, symbol)` per closed minute (served at 1m on Ultra/PAYG, and as 5m/1h/1d rollups on every plan): 169
 measurement columns (order-book depth and depth walls, order-ladder rungs, resting-liquidity
 add/withdraw, price-level lifetime, trade timing, outsized-trade counts, market-cap and attention
-enrichment, and a per-row quality bitmask) across the major spot exchanges and 14,000+ spot pairs. The skill knows
+enrichment, and a per-row quality bitmask) across the major spot exchanges and 14,000+ spot pairs,
+plus the linear futures contracts on the major futures venues (funding, open interest, mark and
+index prices, taker flow and liquidations, with a rolling 60-day history). The skill knows
 that vocabulary and the discover → pick → call → interpret playbook, and it frames every returned
 column as a **measurement** with a definition, never as a trade call.
 
@@ -32,6 +34,7 @@ BlackForge MCP server (preferred) or the `blackforge` CLI — and get an API key
 |---|---|
 | `SKILL.md` | The skill: frontmatter trigger `description` + the playbook |
 | `references/metrics-glossary.md` | All 169 metrics grouped by family, each with its measurement definition and min plan |
+| `references/futures-glossary.md` | Every futures column by family, the futures quality bits and the liquidation event fields |
 | `references/setup.md` | How to install the skill, configure the MCP server or CLI, and get an API key |
 | `scripts/latest-json.sh` | Optional CLI wrapper: dump the latest bucket for a pair as JSON |
 | `scripts/check-catalog-sync.mjs` | Fails if these docs disagree with the live catalog — run it before publishing |

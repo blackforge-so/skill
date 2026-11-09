@@ -9,6 +9,10 @@
   {"query": "how many rows do i have left this month on my blackforge key and what did i use recently", "should_trigger": true},
   {"query": "grab the order ladder rungs (0-3%, 3-6% etc) for the LINKUSDT bid side on gate right now", "should_trigger": true},
   {"query": "show me trade timing stats - longest gap between trades and the strong outsized trade counts for XRP on kucoin today", "should_trigger": true},
+  {"query": "what's the funding rate on BTC perps across binance, bybit and okx right now?", "should_trigger": true},
+  {"query": "how did open interest on the ETHUSDT perpetual on binance change over the last 3 days", "should_trigger": true},
+  {"query": "show me the long liquidations on bybit in the last hour, biggest first", "should_trigger": true},
+  {"query": "what's the basis between the okx BTC swap mark price and okx spot right now, in bps", "should_trigger": true},
   {"query": "what's the current price of bitcoin in dollars?", "should_trigger": false},
   {"query": "explain how a limit order book works in general, i'm new to trading", "should_trigger": false},
   {"query": "write me a python script that connects to the binance websocket and prints trades", "should_trigger": false},
@@ -18,5 +22,7 @@
   {"query": "deploy the blackforge collector to azure and run the blue green swap", "should_trigger": false},
   {"query": "translate this solidity smart contract to explain what it does", "should_trigger": false},
   {"query": "what were the SEC's latest rulings on crypto exchanges this year?", "should_trigger": false},
-  {"query": "help me pick a hardware wallet for storing my bitcoin safely", "should_trigger": false}
+  {"query": "help me pick a hardware wallet for storing my bitcoin safely", "should_trigger": false},
+  {"query": "explain what a perpetual futures funding rate is and why it exists", "should_trigger": false},
+  {"query": "should i open a 10x long on SOL perps tonight?", "should_trigger": false}
 ]
