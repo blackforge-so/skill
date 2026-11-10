@@ -7,10 +7,10 @@ tools and the `blackforge futures` CLI commands, and described by the `futures` 
 `blackforge_catalog`. Like the spot columns, every futures column is a **measurement or a value
 the venue published**, never a call.
 
-**History is a rolling 60-day window, from 7 November 2026.** Unlike the spot archive, futures rows
-older than that are not kept, so for futures a short series can be the end of the data, not only
-the plan's window (Free reads the last 14 days). `futures.historyDays` and `futures.availableFrom`
-in the catalog are the live values.
+**History is kept like spot, from 7 November 2026.** Futures rows are never deleted: each plan reads
+them through its usual history window (Free the last 14 days, Pro and pay-per-call 90, Max 365, Ultra
+the full archive), and nothing exists before recording began. `futures.availableFrom` in the catalog
+is the live start; `futures.historyDays` is null (no retention limit).
 
 **How to use this file.** Pick the `column key` that matches the question and pass it verbatim to
 `blackforge_futures_series` / `blackforge_futures_top` (`metric`) or `blackforge_futures_latest`

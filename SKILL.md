@@ -238,7 +238,8 @@ framing (measurements, never calls), omitted columns and 403s applies here too.
 `blackforge_catalog` (CLI `blackforge catalog --futures`) carries a `futures` block: `venues` (each
 with its `minPlan` and its `liquidations` coverage), `metrics` (each with `key`, `unit`, `family`,
 `rollup`, `minPlan`, and `nullOn` for venues where it is always null), `qualityBits` (the futures
-flag table), `liquidationEvents` (the plan the event feed needs), `availableFrom` and `historyDays`.
+flag table), `liquidationEvents` (the plan the event feed needs), `availableFrom` and `historyDays`
+(null: futures are kept like spot, so the plan's own history window is the only limit).
 [`references/futures-glossary.md`](references/futures-glossary.md) indexes every futures column.
 
 **Contracts are spelled the venue's way**: binance, bybit and bitget `BTCUSDT`; okx `BTC-USDT-SWAP`;
@@ -264,20 +265,21 @@ CLI fallback: `blackforge futures latest|series|top|liquidations|symbols` with t
 | plan | futures venues | finest interval | history | liquidation columns and events |
 |---|---|---|---|---|
 | free | binance, gate, mexc | `1d` | last 14 days | no |
-| pro | all | `1h` | rolling 60 days | no |
-| max | all | `5m` | rolling 60 days | yes |
-| ultra, payg | all | `1m` | rolling 60 days | yes |
+| pro | all | `1h` | last 90 days | no |
+| max | all | `5m` | last 365 days | yes |
+| ultra | all | `1m` | the full archive | yes |
+| payg | all | `1m` | last 90 days | yes |
 
 The `minPlan` fields in the futures catalog are canonical if this table ever disagrees. A venue
 outside the plan, an interval finer than the floor, a ranking on a liquidation column below Max and
 the event feed below Max are each a **403** with an upgrade URL; a liquidation column in
 `futures_latest` or `futures_series` below Max is dropped and named in `columnsOmitted`.
 
-**Futures history IS retention.** Futures rows are kept for a rolling 60 days, from
-7 November 2026 (`historyDays`, `availableFrom`); older ones are deleted. So unlike spot, a futures
-series that starts later than asked may have hit the end of the data, not only the plan's window
-(Free reads 14 days). A `from` before the window is moved forward silently. Compare the first `ts`
-with `availableFrom` and the plan's window and say which one cut it. Never call it a full archive.
+**Futures history is kept like spot.** Futures rows are kept forever from 7 November 2026, when
+recording began (`availableFrom`; `historyDays` is null, no retention limit), and each plan reads
+them through the same history window as spot. A `from` before the plan's window is moved forward
+silently, and nothing exists before `availableFrom`. When a futures series starts later than asked,
+compare its first `ts` with `availableFrom` and the plan's window and say which one cut it.
 
 ### Read the columns honestly
 

@@ -10,7 +10,7 @@ measurement columns (order-book depth and depth walls, order-ladder rungs, resti
 add/withdraw, price-level lifetime, trade timing, outsized-trade counts, market-cap and attention
 enrichment, and a per-row quality bitmask) across the major spot exchanges and 14,000+ spot pairs,
 plus the linear futures contracts on the major futures venues (funding, open interest, mark and
-index prices, taker flow and liquidations, with a rolling 60-day history). The skill knows
+index prices, taker flow and liquidations, kept like spot from 7 November 2026). The skill knows
 that vocabulary and the discover → pick → call → interpret playbook, and it frames every returned
 column as a **measurement** with a definition, never as a trade call.
 

@@ -265,11 +265,20 @@ if (!futures || !Array.isArray(futures.metrics)) {
     if (!liveBits.some((b) => b.name === name)) fail(futuresFile, `bit table names \`${name}\`, which the futures catalog does not serve`);
   }
 
-  // The history window the prose states must be the live one.
+  // The history window the prose states must be the live one. null = kept like spot: then
+  // no futures prose (glossary or SKILL.md) may still describe a rolling window.
   if (typeof futures.historyDays === 'number') {
     for (const m of futuresGlossary.matchAll(/rolling (\d+)-day/g)) {
       if (Number(m[1]) !== futures.historyDays) {
         fail(futuresFile, `says a rolling ${m[1]}-day window, live historyDays is ${futures.historyDays}`);
+      }
+    }
+  } else if (futures.historyDays === null) {
+    const skillMd = read('SKILL.md');
+    const ROLLING = /rolling (\d+)[- ]days?|older ones are deleted/gi;
+    for (const [file, text] of [[futuresFile, futuresGlossary], ['SKILL.md', skillMd]]) {
+      for (const m of text.matchAll(ROLLING)) {
+        fail(file, `says "${m[0]}", but live futures.historyDays is null (kept like spot)`);
       }
     }
   }
